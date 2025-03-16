@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Configuración
 CONTAINER_NAME="tp0_echo_server"  # Nombre del contenedor del servidor
@@ -18,8 +18,8 @@ fi
 RESPONSE=$(docker run --rm --network "$NETWORK_NAME" busybox sh -c \
     "(echo '$MESSAGE'; sleep 1) | nc $SERVER_HOST $PORT")
 
-# Verificar si la respuesta es la esperada
-if [[ "$RESPONSE" == "$MESSAGE" ]]; then
+# Verificar si la respuesta es la esperada (uso de `[ ... ]` en lugar de `[[ ... ]]`)
+if [ "$RESPONSE" = "$MESSAGE" ]; then
     echo "action: test_echo_server | result: success"
 else
     echo "action: test_echo_server | result: fail"
