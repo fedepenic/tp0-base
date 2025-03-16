@@ -1,24 +1,25 @@
 #!/bin/bash
 
-# Definir variables
-SERVER_CONTAINER="server"
-SERVER_PORT=12345
-TEST_MESSAGE="hello_server"
+# Configuración
+CONTAINER_NAME="tp0_echo_server"  # Nombre del contenedor del servidor
+NETWORK_NAME="tp0_testing_net"   # Nombre de la red de Docker
+SERVER_HOST="server"             # Nombre del servidor en la red de Docker
+PORT=12345                       # Puerto del servidor
+MESSAGE="Hello, Echo Server"      # Mensaje de prueba
 
-# Obtener la IP del servidor dentro de la red de Docker
-SERVER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SERVER_CONTAINER")
-
-# Verificar que se obtuvo la IP correctamente
-if [[ -z "$SERVER_IP" ]]; then
+# Verificar si la red de Docker existe
+if ! docker network ls | grep -q "$NETWORK_NAME"; then
+    echo "Docker network $NETWORK_NAME not found"
     echo "action: test_echo_server | result: fail"
     exit 1
 fi
 
-# Enviar mensaje y recibir respuesta con netcat dentro de un contenedor temporal en la misma red
-RECEIVED_MESSAGE=$(docker run --rm --network=testing_net busybox nc -w 2 "$SERVER_IP" "$SERVER_PORT" <<< "$TEST_MESSAGE")
+# Ejecutar Netcat dentro de un contenedor temporal en la misma red
+RESPONSE=$(docker run --rm --network "$NETWORK_NAME" busybox sh -c \
+    "(echo '$MESSAGE'; sleep 1) | nc $SERVER_HOST $PORT")
 
-# Validar la respuesta
-if [[ "$RECEIVED_MESSAGE" == "$TEST_MESSAGE" ]]; then
+# Verificar si la respuesta es la esperada
+if [[ "$RESPONSE" == "$MESSAGE" ]]; then
     echo "action: test_echo_server | result: success"
 else
     echo "action: test_echo_server | result: fail"
