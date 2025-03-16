@@ -16,9 +16,10 @@ services:
       - ./server/config.ini:/config.ini
 """
 
-    # Adding clients before the networks section
-    for i in range(1, cantidad_clientes + 1):
-        compose += f"""  client{i}:
+    # Adding clients only if cantidad_clientes > 0
+    if cantidad_clientes > 0:
+        for i in range(1, cantidad_clientes + 1):
+            compose += f"""  client{i}:
     container_name: client{i}
     image: client:latest
     entrypoint: /client
@@ -53,10 +54,10 @@ if __name__ == "__main__":
     archivo_salida = sys.argv[1]
     try:
         cantidad_clientes = int(sys.argv[2])
-        if cantidad_clientes < 1:
+        if cantidad_clientes < 0:
             raise ValueError
     except ValueError:
-        print("Error: La cantidad de clientes debe ser un número entero positivo.")
+        print("Error: La cantidad de clientes debe ser un número entero no negativo.")
         sys.exit(1)
 
     generar_compose(archivo_salida, cantidad_clientes)
