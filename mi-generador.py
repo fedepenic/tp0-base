@@ -13,6 +13,8 @@ services:
       - LOGGING_LEVEL=DEBUG
     networks:
       - testing_net
+    volumes:
+      - ./server/config.ini:/config.ini
 """
 
     # Adding clients before the networks section
@@ -28,6 +30,8 @@ services:
       - testing_net
     depends_on:
       - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
 """
 
     # Append networks section at the end
