@@ -2,6 +2,7 @@ import socket
 import logging
 import signal
 import sys
+from common.utils import store_bets, Bet
 
 
 class Server:
@@ -56,22 +57,35 @@ class Server:
             client_sock.close()
 
     def __handle_bet(self, client_sock):
-        """Receive and process a bet from a client socket."""
+        """Receive, process, and store a bet from a client socket."""
         try:
             bet_data = client_sock.recv(1024).rstrip().decode('utf-8')
             addr = client_sock.getpeername()
 
-            # Log received bet
+            # Expected bet format: "BET:agency,first_name,last_name,document,birthdate,number"
+            if not bet_data.startswith("BET:"):
+                raise ValueError("Invalid bet format")
+
+            bet_fields = bet_data[4:].split(",")  # Remove "BET:" prefix and split
+            if len(bet_fields) != 6:
+                raise ValueError("Bet must contain exactly 6 fields")
+
+            # Create a Bet instance
+            bet = Bet(*bet_fields)
+
+            # Store the bet
+            store_bets([bet])
+
+            # Log success
             logging.info(f'action: receive_bet | result: success | ip: {addr[0]} | bet: {bet_data}')
-
-            # Process bet (for now, just echo it back)
-            response = f'Bet received: {bet_data}\n'
-            client_sock.send(response.encode('utf-8'))
-
-        except OSError as e:
+            response = f'Bet received and stored: {bet_data}\n'
+        
+        except (ValueError, OSError) as e:
             logging.error(f"action: receive_bet | result: fail | error: {e}")
+            response = f'Error processing bet: {str(e)}\n'
 
         finally:
+            client_sock.send(response.encode('utf-8'))
             client_sock.close()
 
     def __accept_new_connection(self):

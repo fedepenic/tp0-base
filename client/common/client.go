@@ -127,6 +127,7 @@ func (c *Client) StartClientLoop() {
 // sendBet sends a bet message to the server with data from environment variables
 func (c *Client) SendBet() {
 	// Retrieve environment variables
+	agency := os.Getenv("CLI_ID")
 	name := os.Getenv("NOMBRE")
 	lastName := os.Getenv("APELLIDO")
 	document := os.Getenv("DOCUMENTO")
@@ -134,7 +135,7 @@ func (c *Client) SendBet() {
 	number := os.Getenv("NUMERO")
 
 	// Validate that no variables are empty
-	if name == "" || lastName == "" || document == "" || birthDate == "" || number == "" {
+	if agency == "" || name == "" || lastName == "" || document == "" || birthDate == "" || number == "" {
 		log.Criticalf("action: send_bet | result: fail | client_id: %v | error: missing environment variables", c.config.ID)
 		return
 	}
@@ -145,13 +146,12 @@ func (c *Client) SendBet() {
 	}
 	defer c.conn.Close()
 
-	// Construct and send the bet message
-	message := fmt.Sprintf(
-		"[CLIENT %v] Bet Info | Name: %s | Last Name: %s | Document: %s | Birthdate: %s | Number: %s\n",
-		c.config.ID,
-		name, lastName, document, birthDate, number,
+	// Construct the properly formatted bet message
+	message := fmt.Sprintf("BET:%s,%s,%s,%s,%s,%s\n",
+		agency, name, lastName, document, birthDate, number,
 	)
 
+	// Send the bet message to the server
 	fmt.Fprintf(c.conn, message)
 
 	// Receive server response
@@ -163,3 +163,4 @@ func (c *Client) SendBet() {
 
 	log.Infof("action: receive_bet_response | result: success | client_id: %v | msg: %v", c.config.ID, msg)
 }
+
