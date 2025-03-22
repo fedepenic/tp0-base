@@ -3,6 +3,7 @@ import logging
 import signal
 import sys
 
+
 class Server:
     def __init__(self, port, listen_backlog):
         # Initialize server socket
@@ -17,7 +18,8 @@ class Server:
 
     def _shutdown(self, signum, frame):
         """Handle termination signals to gracefully shut down the server."""
-        # logging.info(f'action: shutdown | result: in_progress | signal: {signum}')
+        # logging.info(f'action: shutdown | result: in_progress 
+        # | signal: {signum}')
         self.running = False
         self._server_socket.close()
         logging.info('action: shutdown | result: success')
@@ -36,7 +38,8 @@ class Server:
             try:
                 client_sock = self.__accept_new_connection()
                 if client_sock:
-                    self.__handle_client_connection(client_sock)
+                    # self.__handle_client_connection(client_sock)
+                    self.__handle_bet(client_sock)
             except OSError:
                 break  # Stop accepting connections when shutting down
 
@@ -49,6 +52,25 @@ class Server:
             client_sock.send("{}\n".format(msg).encode('utf-8'))
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
+        finally:
+            client_sock.close()
+
+    def __handle_bet(self, client_sock):
+        """Receive and process a bet from a client socket."""
+        try:
+            bet_data = client_sock.recv(1024).rstrip().decode('utf-8')
+            addr = client_sock.getpeername()
+
+            # Log received bet
+            logging.info(f'action: receive_bet | result: success | ip: {addr[0]} | bet: {bet_data}')
+
+            # Process bet (for now, just echo it back)
+            response = f'Bet received: {bet_data}\n'
+            client_sock.send(response.encode('utf-8'))
+
+        except OSError as e:
+            logging.error(f"action: receive_bet | result: fail | error: {e}")
+
         finally:
             client_sock.close()
 

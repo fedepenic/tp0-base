@@ -1,0 +1,69 @@
+name: tp0
+services:
+  server:
+    container_name: server
+    image: server:latest
+    entrypoint: python3 /main.py
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - testing_net
+    volumes:
+      - ./server/config.ini:/config.ini
+  client1:
+    container_name: client1
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=1
+      - NOMBRE=nombre1
+      - APELLIDO=apellido1
+      - DOCUMENTO=40000001
+      - NACIMIENTO=1960-04-12
+      - NUMERO=1
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+  client2:
+    container_name: client2
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=2
+      - NOMBRE=nombre2
+      - APELLIDO=apellido2
+      - DOCUMENTO=40000002
+      - NACIMIENTO=2002-11-20
+      - NUMERO=2
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+  client3:
+    container_name: client3
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=3
+      - NOMBRE=nombre3
+      - APELLIDO=apellido3
+      - DOCUMENTO=40000003
+      - NACIMIENTO=1992-04-10
+      - NUMERO=3
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+networks:
+  testing_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.125.0/24

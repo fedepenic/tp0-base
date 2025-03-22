@@ -89,7 +89,7 @@ func (c *Client) StartClientLoop() {
 			log.Warningf("action: loop_interrupted | result: stopped | client_id: %v", c.config.ID)
 			return
 		default:
-			// Create the connection the server in every loop iteration
+			// Create the connection to the server in every loop iteration
 			if err := c.createClientSocket(); err != nil {
 				return
 			}
@@ -122,4 +122,44 @@ func (c *Client) StartClientLoop() {
 		}
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+}
+
+// sendBet sends a bet message to the server with data from environment variables
+func (c *Client) SendBet() {
+	// Retrieve environment variables
+	name := os.Getenv("NOMBRE")
+	lastName := os.Getenv("APELLIDO")
+	document := os.Getenv("DOCUMENTO")
+	birthDate := os.Getenv("NACIMIENTO")
+	number := os.Getenv("NUMERO")
+
+	// Validate that no variables are empty
+	if name == "" || lastName == "" || document == "" || birthDate == "" || number == "" {
+		log.Criticalf("action: send_bet | result: fail | client_id: %v | error: missing environment variables", c.config.ID)
+		return
+	}
+
+	// Create the connection to the server
+	if err := c.createClientSocket(); err != nil {
+		return
+	}
+	defer c.conn.Close()
+
+	// Construct and send the bet message
+	message := fmt.Sprintf(
+		"[CLIENT %v] Bet Info | Name: %s | Last Name: %s | Document: %s | Birthdate: %s | Number: %s\n",
+		c.config.ID,
+		name, lastName, document, birthDate, number,
+	)
+
+	fmt.Fprintf(c.conn, message)
+
+	// Receive server response
+	msg, err := bufio.NewReader(c.conn).ReadString('\n')
+	if err != nil {
+		log.Errorf("action: receive_bet_response | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
+
+	log.Infof("action: receive_bet_response | result: success | client_id: %v | msg: %v", c.config.ID, msg)
 }
