@@ -1,4 +1,13 @@
 import sys
+import random
+from datetime import datetime, timedelta
+
+def generar_fecha_aleatoria():
+    start_date = datetime(1950, 1, 1)
+    end_date = datetime(2005, 12, 31)
+    delta = end_date - start_date
+    random_days = random.randint(0, delta.days)
+    return (start_date + timedelta(days=random_days)).strftime('%Y-%m-%d')
 
 def generar_compose(archivo_salida, cantidad_clientes):
     # Base structure
@@ -19,12 +28,23 @@ services:
     # Adding clients only if cantidad_clientes > 0
     if cantidad_clientes > 0:
         for i in range(1, cantidad_clientes + 1):
+            nombre = f"nombre{i}"
+            apellido = f"apellido{i}"
+            nacimiento = generar_fecha_aleatoria()
+            documento = 40000000 + i
+            numero = i
+            
             compose += f"""  client{i}:
     container_name: client{i}
     image: client:latest
     entrypoint: /client
     environment:
       - CLI_ID={i}
+      - NOMBRE={nombre}
+      - APELLIDO={apellido}
+      - DOCUMENTO={documento}
+      - NACIMIENTO={nacimiento}
+      - NUMERO={numero}
     networks:
       - testing_net
     depends_on:
