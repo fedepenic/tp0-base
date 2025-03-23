@@ -19,7 +19,7 @@ services:
       - NOMBRE=nombre1
       - APELLIDO=apellido1
       - DOCUMENTO=40000001
-      - NACIMIENTO=1960-04-12
+      - NACIMIENTO=1990-09-13
       - NUMERO=1
     networks:
       - testing_net
@@ -27,6 +27,7 @@ services:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-1.csv:/.data/agency-1.csv
   client2:
     container_name: client2
     image: client:latest
@@ -36,7 +37,7 @@ services:
       - NOMBRE=nombre2
       - APELLIDO=apellido2
       - DOCUMENTO=40000002
-      - NACIMIENTO=2002-11-20
+      - NACIMIENTO=1999-03-18
       - NUMERO=2
     networks:
       - testing_net
@@ -44,6 +45,7 @@ services:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-2.csv:/.data/agency-2.csv
   client3:
     container_name: client3
     image: client:latest
@@ -53,7 +55,7 @@ services:
       - NOMBRE=nombre3
       - APELLIDO=apellido3
       - DOCUMENTO=40000003
-      - NACIMIENTO=1992-04-10
+      - NACIMIENTO=1985-06-26
       - NUMERO=3
     networks:
       - testing_net
@@ -61,6 +63,43 @@ services:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-3.csv:/.data/agency-3.csv
+  client4:
+    container_name: client4
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=4
+      - NOMBRE=nombre4
+      - APELLIDO=apellido4
+      - DOCUMENTO=40000004
+      - NACIMIENTO=1960-11-04
+      - NUMERO=4
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - ./.data/agency-4.csv:/.data/agency-4.csv
+  client5:
+    container_name: client5
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=5
+      - NOMBRE=nombre5
+      - APELLIDO=apellido5
+      - DOCUMENTO=40000005
+      - NACIMIENTO=1984-07-07
+      - NUMERO=5
+    networks:
+      - testing_net
+    depends_on:
+      - server
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - ./.data/agency-5.csv:/.data/agency-5.csv
 networks:
   testing_net:
     ipam:

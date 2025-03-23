@@ -51,6 +51,7 @@ services:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-{i}.csv:/.data/agency-{i}.csv
 """
 
     # Append networks section at the end
