@@ -136,12 +136,13 @@ func (c *Client) SendBet() {
 
 	// Validate that no variables are empty
 	if agency == "" || name == "" || lastName == "" || document == "" || birthDate == "" || number == "" {
-		log.Criticalf("action: send_bet | result: fail | client_id: %v | error: missing environment variables", c.config.ID)
+		log.Criticalf("action: apuesta_enviada | result: fail | error: missing environment variables")
 		return
 	}
 
 	// Create the connection to the server
 	if err := c.createClientSocket(); err != nil {
+		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
 		return
 	}
 	defer c.conn.Close()
@@ -152,15 +153,20 @@ func (c *Client) SendBet() {
 	)
 
 	// Send the bet message to the server
-	fmt.Fprintf(c.conn, message)
+	_, err := fmt.Fprintf(c.conn, message)
+	if err != nil {
+		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
+		return
+	}
 
 	// Receive server response
 	msg, err := bufio.NewReader(c.conn).ReadString('\n')
 	if err != nil {
-		log.Errorf("action: receive_bet_response | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
 		return
 	}
 
-	log.Infof("action: receive_bet_response | result: success | client_id: %v | msg: %v", c.config.ID, msg)
+	// Log success with the required format
+	log.Infof("action: apuesta_enviada | result: success | dni: %v | numero: %v", document, number)
 }
 
