@@ -2,10 +2,12 @@ package common
 
 import (
 	"bufio"
+	"encoding/csv"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -124,51 +126,75 @@ func (c *Client) StartClientLoop() {
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
 
-// sendBet sends a bet message to the server with data from environment variables
-func (c *Client) SendBet(batchMaxAmount	int) {
-	// Retrieve environment variables
+// SendBets envía las apuestas en lotes de tamaño batchMaxAmount
+func (c *Client) SendBets(batchMaxAmount int) {
+	// Obtener CLI_ID desde variable de entorno
 	agency := os.Getenv("CLI_ID")
-	name := os.Getenv("NOMBRE")
-	lastName := os.Getenv("APELLIDO")
-	document := os.Getenv("DOCUMENTO")
-	birthDate := os.Getenv("NACIMIENTO")
-	number := os.Getenv("NUMERO")
-
-	log.Info("Batch Number", batchMaxAmount)
-
-	// Validate that no variables are empty
-	if agency == "" || name == "" || lastName == "" || document == "" || birthDate == "" || number == "" {
-		log.Criticalf("action: apuesta_enviada | result: fail | error: missing environment variables")
-		return
+	if agency == "" {
+		log.Fatalf("error: missing CLI_ID environment variable")
 	}
 
-	// Create the connection to the server
+	// Leer apuestas desde el archivo CSV
+	filePath := fmt.Sprintf("./.data/agency-%s.csv", agency)
+	bets, err := readBetsFromFile(filePath)
+	if err != nil {
+		log.Fatalf("error reading bets file: %v", err)
+	}
+
+	// Crear socket del cliente
 	if err := c.createClientSocket(); err != nil {
-		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
-		return
+		log.Fatalf("error creating socket: %v", err)
 	}
 	defer c.conn.Close()
 
-	// Construct the properly formatted bet message
-	message := fmt.Sprintf("BET:%s,%s,%s,%s,%s,%s\n",
-		agency, name, lastName, document, birthDate, number,
-	)
+	// Enviar apuestas en lotes de tamaño batchMaxAmount
+	for i := 0; i < len(bets); i += batchMaxAmount {
+		end := i + batchMaxAmount
+		if end > len(bets) {
+			end = len(bets)
+		}
 
-	// Send the bet message to the server
-	_, err := fmt.Fprintf(c.conn, message)
+		// Formato del mensaje: BATCH_BET:agency|maxAmount|bet1;bet2;...
+		batch := bets[i:end]
+		message := fmt.Sprintf("BATCH_BET:%s|%d|%s\n", agency, batchMaxAmount, strings.Join(batch, ";"))
+
+		// Enviar batch al servidor
+		_, err := fmt.Fprintf(c.conn, message)
+		if err != nil {
+			log.Fatalf("error sending batch: %v", err)
+		}
+
+		// Recibir respuesta del servidor
+		response, err := bufio.NewReader(c.conn).ReadString('\n')
+		if err != nil {
+			log.Fatalf("error receiving response: %v", err)
+		}
+
+		log.Infof("action: apuesta_enviada | batch_size: %d | result: %s", len(batch), strings.TrimSpace(response))
+	}
+}
+
+// readBetsFromFile lee las apuestas del archivo CSV
+func readBetsFromFile(filePath string) ([]string, error) {
+	file, err := os.Open(filePath)
 	if err != nil {
-		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
-		return
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	var bets []string
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) != 5 {
+			continue
+		}
+		bets = append(bets, strings.Join(record, ","))
 	}
 
-	// Receive server response
-	_, err = bufio.NewReader(c.conn).ReadString('\n')
-	if err != nil {
-		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
-		return
-	}
-
-	// Log success with the required format
-	log.Infof("action: apuesta_enviada | result: success | dni: %v | numero: %v", document, number)
+	return bets, nil
 }
 

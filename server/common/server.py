@@ -57,32 +57,47 @@ class Server:
             client_sock.close()
 
     def __handle_bet(self, client_sock):
-        """Receive, process, and store a bet from a client socket."""
+        """Receive, process, and store a batch of bets from a client socket."""
         try:
-            bet_data = client_sock.recv(1024).rstrip().decode('utf-8')
+            bet_data = client_sock.recv(4096).rstrip().decode('utf-8')  # Aumentamos el buffer para manejar batches más grandes
             
-            # Expected bet format: "BET:agency,first_name,last_name,document,birthdate,number"
-            if not bet_data.startswith("BET:"):
-                raise ValueError("Invalid bet format")
+            # Expected format: "BATCH_BET:agency|maxAmount|bet1;bet2;..."
+            if not bet_data.startswith("BATCH_BET:"):
+                raise ValueError("Invalid batch format")
 
-            bet_fields = bet_data[4:].split(",")  # Remove "BET:" prefix and split
-            if len(bet_fields) != 6:
-                raise ValueError("Bet must contain exactly 6 fields")
+            # Parse message
+            parts = bet_data[10:].split("|", 2)  # Removemos "BATCH_BET:" y dividimos en 3 partes
+            if len(parts) != 3:
+                logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets)}")
+                raise ValueError("Batch message must contain 3 parts: agency, batchMaxAmount, and bets")
 
-            # Create a Bet instance
-            bet = Bet(*bet_fields)
+            agency, batch_max_amount, bets_str = parts
+            batch_max_amount = int(batch_max_amount)  # Convertir el maxAmount a entero
 
-            # Store the bet
-            store_bets([bet])
+            # Parse bets
+            bets = []
+            for bet_entry in bets_str.split(";"):
+                bet_fields = bet_entry.split(",")
+                if len(bet_fields) != 6:
+                    logging.warning(f"Skipping invalid bet: {bet_entry}")
+                    continue  # Omitimos apuestas mal formateadas
+                
+                bets.append(Bet(*bet_fields))
 
-            # Log success following the required format
-            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet_fields[3]} | numero: {bet_fields[5]}')
-            
-            response = f'Bet received and stored: {bet_data}\n'
-        
+            if not bets:
+                raise ValueError("No valid bets found in batch")
+
+            # Store the bets
+            store_bets(bets)
+
+            # Log success
+            logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
+
+            response = f'Successfully stored {len(bets)} bets\n'
+
         except (ValueError, OSError) as e:
-            logging.error(f"action: apuesta_almacenada | result: fail | error: {e}")
-            response = f'Error processing bet: {str(e)}\n'
+            logging.error(f"action: apuestas_almacenadas | result: fail | error: {e}")
+            response = f'Error processing batch: {str(e)}\n'
 
         finally:
             client_sock.send(response.encode('utf-8'))
