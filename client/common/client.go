@@ -125,7 +125,7 @@ func (c *Client) StartClientLoop() {
 }
 
 // sendBet sends a bet message to the server with data from environment variables
-func (c *Client) SendBet() {
+func (c *Client) SendBet(batchMaxAmount	int) {
 	// Retrieve environment variables
 	agency := os.Getenv("CLI_ID")
 	name := os.Getenv("NOMBRE")
@@ -133,6 +133,8 @@ func (c *Client) SendBet() {
 	document := os.Getenv("DOCUMENTO")
 	birthDate := os.Getenv("NACIMIENTO")
 	number := os.Getenv("NUMERO")
+
+	log.Info("Batch Number", batchMaxAmount)
 
 	// Validate that no variables are empty
 	if agency == "" || name == "" || lastName == "" || document == "" || birthDate == "" || number == "" {
