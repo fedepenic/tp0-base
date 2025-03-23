@@ -160,7 +160,7 @@ func (c *Client) SendBet() {
 	}
 
 	// Receive server response
-	msg, err := bufio.NewReader(c.conn).ReadString('\n')
+	_, err = bufio.NewReader(c.conn).ReadString('\n')
 	if err != nil {
 		log.Errorf("action: apuesta_enviada | result: fail | dni: %v | numero: %v | error: %v", document, number, err)
 		return
