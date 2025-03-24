@@ -112,6 +112,6 @@ func main() {
 	}
 
 	client := common.NewClient(clientConfig)
-	client.SendBet(v.GetInt("batch.maxAmount"))
+	client.SendBets(v.GetInt("batch.maxAmount"))
 	// client.StartClientLoop()
 }
