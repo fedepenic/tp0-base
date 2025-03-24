@@ -170,7 +170,7 @@ func (c *Client) SendBets(batchMaxAmount int) {
 			log.Fatalf("error receiving response: %v", err)
 		}
 
-		log.Infof("action: apuesta_enviada | batch_size: %d | result: success", len(batch))
+		log.Infof("action: apuesta_enviada | result: success | batch_size: %d", len(batch))
 	}
 }
 
