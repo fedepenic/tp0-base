@@ -165,12 +165,12 @@ func (c *Client) SendBets(batchMaxAmount int) {
 		}
 
 		// Recibir respuesta del servidor
-		response, err := bufio.NewReader(c.conn).ReadString('\n')
+		_, err = bufio.NewReader(c.conn).ReadString('\n')
 		if err != nil {
 			log.Fatalf("error receiving response: %v", err)
 		}
 
-		log.Infof("action: apuesta_enviada | batch_size: %d | result: %s", len(batch), strings.TrimSpace(response))
+		log.Infof("action: apuesta_enviada | batch_size: %d | result: success", len(batch))
 	}
 }
 
