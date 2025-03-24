@@ -78,6 +78,7 @@ class Server:
             bets = []
             for bet_entry in bets_str.split(";"):
                 bet_fields = bet_entry.split(",")
+                bet_fields.insert(0, agency)
                 if len(bet_fields) != 6:
                     logging.warning(f"Skipping invalid bet: {bet_entry}")
                     continue  # Omitimos apuestas mal formateadas
