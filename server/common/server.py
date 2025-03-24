@@ -94,7 +94,7 @@ class Server:
             # Log success
             logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
 
-            response = f'Successfully stored {len(bets)} bets\n'
+            response = 'success'
 
         except (ValueError, OSError) as e:
             logging.error(f"action: apuestas_almacenadas | result: fail | error: {e}")
