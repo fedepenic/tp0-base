@@ -11,7 +11,7 @@ def generar_fecha_aleatoria():
 
 def generar_compose(archivo_salida, cantidad_clientes):
     # Base structure
-    compose = """name: tp0
+    compose = f"""name: tp0
 services:
   server:
     container_name: server
@@ -19,6 +19,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
+      - CANTIDAD_CLIENTES={cantidad_clientes}
     networks:
       - testing_net
     volumes:
