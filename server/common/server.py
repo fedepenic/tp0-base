@@ -12,6 +12,7 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self.running = True  # Flag to control the main loop
+        self._completed_agencies = set()  # Track agencies that completed all their bets
 
         # Register signal handlers
         signal.signal(signal.SIGTERM, self.__shutdown)
@@ -28,13 +29,8 @@ class Server:
 
     def run(self):
         """
-        Dummy Server loop
-
-        Server that accepts new connections and establishes a
-        communication with a client. After a client finishes communication,
-        the server starts accepting new connections again.
+        Server loop that accepts new connections and processes bets.
         """
-
         while self.running:
             try:
                 client_sock = self.__accept_new_connection()
@@ -58,11 +54,13 @@ class Server:
 
     def __handle_bets(self, client_sock):
         """Handles the reception, validation, and storage of bets from a client."""
+        agency = None
         try:
             number_of_bets = self.__receive_number_of_bets(client_sock)
-            all_bets = self.__receive_all_batches(client_sock, number_of_bets)
+            all_bets, agency = self.__receive_all_batches(client_sock, number_of_bets)
             self.__store_received_bets(all_bets)
-            response = f'Successfully stored {len(all_bets)} bets\n'
+            self._completed_agencies.add(agency)  # Mark agency as completed
+            response = f'Successfully stored {len(all_bets)} bets for agency {agency}\n'
         except (ValueError, OSError) as e:
             logging.error(f"action: apuesta_recibida | result: fail | cantidad: {number_of_bets}")
             response = f'Error processing batch: {str(e)}\n'
@@ -84,15 +82,17 @@ class Server:
         """Receives batches of bets until the expected total is met."""
         bets_received = 0
         all_bets = []
+        agency = None
 
         while bets_received < total_bets:
-            batch_bets = self.__receive_bet_batch(client_sock)
+            batch_bets, batch_agency = self.__receive_bet_batch(client_sock)
             all_bets.extend(batch_bets)
             bets_received += len(batch_bets)
+            agency = batch_agency
             logging.info(f"Received batch, total bets received: {bets_received}/{total_bets}")
             self.__acknowledge_client(client_sock, "ACK_BATCH_RECEIVED")
 
-        return all_bets
+        return all_bets, agency
 
     def __receive_bet_batch(self, client_sock):
         """Receives and parses a single batch of bets."""
@@ -124,7 +124,7 @@ class Server:
         if not batch_bets:
             raise ValueError("No valid bets found in batch")
 
-        return batch_bets
+        return batch_bets, agency
 
     def __acknowledge_client(self, client_sock, message):
         """Sends an acknowledgment message to the client."""
