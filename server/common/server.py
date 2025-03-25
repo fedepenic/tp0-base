@@ -112,7 +112,7 @@ class Server:
 
             # Store the bets after receiving all batches
             store_bets(all_bets)
-            logging.info(f"action: apuesta_recibida | result: success | cantidad: {total_bets}")
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(all_bets)}")
 
             response = f'Successfully stored {len(all_bets)} bets\n'
 
