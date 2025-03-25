@@ -112,12 +112,12 @@ class Server:
 
             # Store the bets after receiving all batches
             store_bets(all_bets)
-            logging.info(f"action: apuestas_almacenadas | result: success | cantidad: {len(all_bets)}")
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(total_bets)}")
 
             response = f'Successfully stored {len(all_bets)} bets\n'
 
         except (ValueError, OSError) as e:
-            logging.error(f"action: apuestas_almacenadas | result: fail | error: {e}")
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(total_bets)}")
             response = f'Error processing batch: {str(e)}\n'
 
         finally:
