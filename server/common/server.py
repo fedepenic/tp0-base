@@ -3,7 +3,7 @@ import logging
 import signal
 import sys
 import os
-from common.utils import store_bets, Bet
+from common.utils import store_bets, load_bets, has_won, Bet
 
 
 class Server:
@@ -35,8 +35,7 @@ class Server:
                     agency_id = self.__handle_bets(client_sock)
                     if agency_id:
                         self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
-                    if len(self._completed_agencies) >= self._total_agencies:
-                        logging.info('action: sorteo | result: success')
+                    self.__process_lottery_results()
             except OSError:
                 break  # Stop accepting connections when shutting down
 
@@ -51,6 +50,26 @@ class Server:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             client_sock.close()
+
+    def __process_lottery_results(self):
+        if len(self._completed_agencies) >= self._total_agencies:
+            logging.info('action: sorteo | result: success')
+            
+            winning_documents = {}
+            for bet in load_bets():
+                if has_won(bet):
+                    if bet.agency not in winning_documents:
+                        winning_documents[bet.agency] = []
+                    winning_documents[bet.agency].append(bet.document)
+            
+            for agency, documents in winning_documents.items():
+                if agency in self._agency_sockets:
+                    winner_message = f'GANADORES: {" ,".join(documents)}\n'
+                    try:
+                        self._agency_sockets[agency].sendall(winner_message.encode('utf-8'))
+                        logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
+                    except OSError as e:
+                        logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')
 
     def __handle_bets(self, client_sock):
         agency = None
