@@ -2,6 +2,7 @@ import socket
 import logging
 import signal
 import sys
+import os
 from common.utils import store_bets, Bet
 
 
@@ -11,8 +12,10 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
-        self.running = True  # Flag to control the main loop
-        self._completed_agencies = set()  # Track agencies that completed all their bets
+        self._running = True  # Flag to control the main loop
+        self._completed_agencies = set()  # Track agencies that completed
+        # all their bets
+        self._total_agencies = int(os.getenv("CANTIDAD_CLIENTES", 0))
 
         # Register signal handlers
         signal.signal(signal.SIGTERM, self.__shutdown)
@@ -22,7 +25,7 @@ class Server:
         """Handle termination signals to gracefully shut down the server."""
         # logging.info(f'action: shutdown | result: in_progress 
         # | signal: {signum}')
-        self.running = False
+        self._running = False
         self._server_socket.close()
         logging.info('action: shutdown | result: success')
         sys.exit(0)
@@ -31,12 +34,14 @@ class Server:
         """
         Server loop that accepts new connections and processes bets.
         """
-        while self.running:
+        while self._running:
             try:
                 client_sock = self.__accept_new_connection()
                 if client_sock:
                     # self.__handle_client_connection(client_sock)
                     self.__handle_bets(client_sock)
+                    if len(self.completed_agencies) >= self.total_agencies:
+                        logging.info('action: sorteo | result: success')
             except OSError:
                 break  # Stop accepting connections when shutting down
 
