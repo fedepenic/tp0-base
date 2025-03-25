@@ -145,7 +145,7 @@ func (c *Client) SendBets(batchMaxAmount int) {
 	if err := c.createClientSocket(); err != nil {
 		log.Fatalf("error creating socket: %v", err)
 	}
-	defer c.conn.Close()
+	defer c.cleanup() // Ensure the connection is closed properly
 
 	// Step 1: Send total number of bets
 	totalBets := len(bets)
@@ -158,6 +158,7 @@ func (c *Client) SendBets(batchMaxAmount int) {
 	ack, err := bufio.NewReader(c.conn).ReadString('\n')
 	if err != nil || strings.TrimSpace(ack) != "ACK_TOTAL_BETS" {
 		log.Fatalf("error receiving total bets acknowledgment: %v", err)
+		return
 	}
 
 	// Step 2: Send bets in batches
@@ -175,12 +176,14 @@ func (c *Client) SendBets(batchMaxAmount int) {
 		_, err := fmt.Fprintf(c.conn, message)
 		if err != nil {
 			log.Fatalf("error sending batch: %v", err)
+			return
 		}
 
 		// Wait for acknowledgment from server
 		ackBatch, err := bufio.NewReader(c.conn).ReadString('\n')
 		if err != nil || strings.TrimSpace(ackBatch) != "ACK_BATCH_RECEIVED" {
 			log.Fatalf("error receiving batch acknowledgment: %v", err)
+			return
 		}
 
 		log.Infof("action: apuesta_enviada | result: success | batch_size: %d", len(batch))
@@ -190,6 +193,7 @@ func (c *Client) SendBets(batchMaxAmount int) {
 	response, err := bufio.NewReader(c.conn).ReadString('\n')
 	if err != nil {
 		log.Fatalf("error receiving final response: %v", err)
+		return
 	}
 
 	log.Infof("Final server response: %s", strings.TrimSpace(response))
