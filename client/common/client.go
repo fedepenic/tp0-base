@@ -126,82 +126,103 @@ func (c *Client) StartClientLoop() {
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
 
-// SendBets envía las apuestas en lotes de tamaño batchMaxAmount
 func (c *Client) SendBets(batchMaxAmount int) {
-	// Get CLI_ID from environment variable
+	agency, err := getAgencyID()
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	bets, err := loadBets(agency)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	if err := c.initializeConnection(); err != nil {
+		log.Fatalf("error: %v", err)
+	}
+	defer c.cleanup()
+
+	if err := c.sendTotalBets(len(bets)); err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	if err := c.sendBetsInBatches(bets, batchMaxAmount, agency); err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	finalResponse, err := receiveServerResponse(c.conn)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	log.Infof("Final server response: %s", finalResponse)
+}
+
+func getAgencyID() (string, error) {
 	agency := os.Getenv("CLI_ID")
 	if agency == "" {
-		log.Fatalf("error: missing CLI_ID environment variable")
+		return "", fmt.Errorf("missing CLI_ID environment variable")
 	}
+	return agency, nil
+}
 
-	// Read bets from CSV file
+func loadBets(agency string) ([]string, error) {
 	filePath := fmt.Sprintf("./.data/agency-%s.csv", agency)
-	bets, err := readBetsFromFile(filePath)
+	return readBetsFromFile(filePath)
+}
+
+func (c *Client) initializeConnection() error {
+	return c.createClientSocket()
+}
+
+func (c *Client) sendTotalBets(totalBets int) error {
+	_, err := fmt.Fprintf(c.conn, "%d\n", totalBets)
 	if err != nil {
-		log.Fatalf("error reading bets file: %v", err)
+		return fmt.Errorf("error sending total bets count: %w", err)
 	}
+	return expectAcknowledgment(c.conn, "ACK_TOTAL_BETS")
+}
 
-	// Create client socket
-	if err := c.createClientSocket(); err != nil {
-		log.Fatalf("error creating socket: %v", err)
-	}
-	defer c.cleanup() // Ensure the connection is closed properly
-
-	// Step 1: Send total number of bets
+func (c *Client) sendBetsInBatches(bets []string, batchMaxAmount int, agency string) error {
 	totalBets := len(bets)
-	_, err = fmt.Fprintf(c.conn, "%d\n", totalBets)
-	if err != nil {
-		log.Fatalf("error sending total bets count: %v", err)
-	}
-
-	// Wait for acknowledgment from server
-	ack, err := bufio.NewReader(c.conn).ReadString('\n')
-	if err != nil || strings.TrimSpace(ack) != "ACK_TOTAL_BETS" {
-		log.Fatalf("error receiving total bets acknowledgment: %v", err)
-		return
-	}
-
-	// Step 2: Send bets in batches
 	for i := 0; i < totalBets; i += batchMaxAmount {
 		end := i + batchMaxAmount
 		if end > totalBets {
 			end = totalBets
 		}
 
-		// Format message: BATCH_BET:agency|maxAmount|bet1;bet2;...
 		batch := bets[i:end]
 		message := fmt.Sprintf("BATCH_BET:%s|%d|%s\n", agency, batchMaxAmount, strings.Join(batch, ";"))
 
-		// Send batch to server
-		_, err := fmt.Fprintf(c.conn, message)
-		if err != nil {
-			log.Fatalf("error sending batch: %v", err)
-			return
+		if _, err := fmt.Fprintf(c.conn, message); err != nil {
+			return fmt.Errorf("error sending batch: %w", err)
 		}
 
-		// Wait for acknowledgment from server
-		ackBatch, err := bufio.NewReader(c.conn).ReadString('\n')
-		if err != nil || strings.TrimSpace(ackBatch) != "ACK_BATCH_RECEIVED" {
-			log.Fatalf("error receiving batch acknowledgment: %v", err)
-			return
+		if err := expectAcknowledgment(c.conn, "ACK_BATCH_RECEIVED"); err != nil {
+			return err
 		}
 
 		log.Infof("action: apuesta_enviada | result: success | batch_size: %d", len(batch))
 	}
-
-	// Receive final response from server
-	response, err := bufio.NewReader(c.conn).ReadString('\n')
-	if err != nil {
-		log.Fatalf("error receiving final response: %v", err)
-		return
-	}
-
-	log.Infof("Final server response: %s", strings.TrimSpace(response))
+	return nil
 }
 
+func expectAcknowledgment(conn net.Conn, expected string) error {
+	ack, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil || strings.TrimSpace(ack) != expected {
+		return fmt.Errorf("unexpected acknowledgment: %v", err)
+	}
+	return nil
+}
 
+func receiveServerResponse(conn net.Conn) (string, error) {
+	response, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("error receiving final response: %w", err)
+	}
+	return strings.TrimSpace(response), nil
+}
 
-// readBetsFromFile lee las apuestas del archivo CSV
 func readBetsFromFile(filePath string) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -221,7 +242,6 @@ func readBetsFromFile(filePath string) ([]string, error) {
 		}
 		bets = append(bets, strings.Join(record, ","))
 	}
-
 	return bets, nil
 }
 
