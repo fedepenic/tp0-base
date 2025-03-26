@@ -157,6 +157,11 @@ func (c *Client) SendBets(batchMaxAmount int) {
 
 	log.Infof("Final server response: %s", finalResponse)
 
+	_, err = fmt.Fprintf(c.conn, "FINISHED SENDING BETS\n")
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
 	if err := c.receiveWinners(); err != nil {
 		log.Fatalf("error: %v", err)
 	}
