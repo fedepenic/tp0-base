@@ -65,7 +65,10 @@ class Server:
             
             for agency, documents in winning_documents.items():
                 if str(agency) in self._agency_sockets:
-                    winner_message = f'GANADORES: {" ,".join(documents)}\n'
+                    if not documents:
+                        winner_message = 'GANADORES: None\n'
+                    else:
+                        winner_message = f'GANADORES: {" ,".join(documents)}\n'
                     try:
                         self._agency_sockets[str(agency)].sendall(winner_message.encode('utf-8'))
                         logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')

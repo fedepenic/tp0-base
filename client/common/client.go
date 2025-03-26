@@ -175,9 +175,18 @@ func (c *Client) receiveWinners() error {
 		return fmt.Errorf("unexpected winners message format: %s", winnersMessage)
 	}
 
-	winnersList := strings.Split(strings.TrimSpace(strings.TrimPrefix(winnersMessage, prefix)), " ,")
+	winnersList := strings.TrimSpace(strings.TrimPrefix(winnersMessage, prefix))
 
-	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winnersList))
+	if winnersList == "None" {
+		winnersList = ""
+	}
+
+	var winnersArray []string
+	if winnersList != "" {
+		winnersArray = strings.Split(winnersList, " ,")
+	}
+
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winnersArray))
 
 	return nil
 }
