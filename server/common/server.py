@@ -56,11 +56,12 @@ class Server:
             logging.info('action: sorteo | result: success')
             
             winning_documents = {}
+            for agency in self._completed_agencies:
+                winning_documents[agency] = []
+
             for bet in load_bets():
                 if has_won(bet):
-                    if bet.agency not in winning_documents:
-                        winning_documents[bet.agency] = []
-                    winning_documents[bet.agency].append(bet.document)
+                    winning_documents[str(bet.agency)].append(bet.document)
             
             for agency, documents in winning_documents.items():
                 if str(agency) in self._agency_sockets:
