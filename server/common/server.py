@@ -63,10 +63,10 @@ class Server:
                     winning_documents[bet.agency].append(bet.document)
             
             for agency, documents in winning_documents.items():
-                if agency in self._agency_sockets:
+                if str(agency) in self._agency_sockets:
                     winner_message = f'GANADORES: {" ,".join(documents)}\n'
                     try:
-                        self._agency_sockets[agency].sendall(winner_message.encode('utf-8'))
+                        self._agency_sockets[str(agency)].sendall(winner_message.encode('utf-8'))
                         logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
                     except OSError as e:
                         logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')

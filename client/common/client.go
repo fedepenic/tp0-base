@@ -156,7 +156,32 @@ func (c *Client) SendBets(batchMaxAmount int) {
 	}
 
 	log.Infof("Final server response: %s", finalResponse)
+
+	if err := c.receiveWinners(); err != nil {
+		log.Fatalf("error: %v", err)
+	}
 }
+
+func (c *Client) receiveWinners() error {
+	winnersMessage, err := bufio.NewReader(c.conn).ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("error receiving winners: %w", err)
+	}
+
+	winnersMessage = strings.TrimSpace(winnersMessage)
+
+	const prefix = "GANADORES: "
+	if !strings.HasPrefix(winnersMessage, prefix) {
+		return fmt.Errorf("unexpected winners message format: %s", winnersMessage)
+	}
+
+	winnersList := strings.Split(strings.TrimSpace(strings.TrimPrefix(winnersMessage, prefix)), " ,")
+
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winnersList))
+
+	return nil
+}
+
 
 func getAgencyID() (string, error) {
 	agency := os.Getenv("CLI_ID")
