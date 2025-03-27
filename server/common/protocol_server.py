@@ -5,6 +5,14 @@ from common.utils import store_bets, load_bets, has_won, Bet
 def __send_message(sock, message):
     sock.sendall(message.encode('utf-8'))
 
+def __receive_message(sock, buffer_size=1024):
+    try:
+        data = sock.recv(buffer_size).decode('utf-8').strip()
+        return data
+    except OSError as e:
+        logging.error(f"Error receiving data: {e}")
+        raise
+
 def handle_bets(server, client_sock):
     agency = None
     try:
@@ -21,15 +29,15 @@ def handle_bets(server, client_sock):
         response = f'Error processing batch: {str(e)}\n'
     finally:
         __send_final_response(client_sock, response)
-    
-    finished_sending_bets_msg = client_sock.recv(1024).rstrip().decode('utf-8')
 
-    logging.info(f'Agency {agency} message: {finished_sending_bets_msg} ')
+    finished_sending_bets_msg = __receive_message(client_sock)
+
+    logging.info(f'Agency {agency} message: {finished_sending_bets_msg}')
 
     return agency
 
 def __receive_number_of_bets(client_sock):
-    total_bets_data = client_sock.recv(1024).decode('utf-8').strip()
+    total_bets_data = __receive_message(client_sock)
     if not total_bets_data.isdigit():
         raise ValueError("Invalid total bets count")
     total_bets = int(total_bets_data)
@@ -51,7 +59,7 @@ def __receive_all_batches(client_sock, total_bets):
     return all_bets, agency
 
 def __receive_bet_batch(client_sock):
-    bet_data = client_sock.recv(4096).rstrip().decode('utf-8')
+    bet_data = __receive_message(client_sock, 4096)
     if not bet_data.startswith("BATCH_BET:"):
         raise ValueError("Invalid batch format")
     return __parse_bet_batch(bet_data[10:])
