@@ -46,7 +46,6 @@ class Server:
 
     def __handle_new_client(self, client_sock):
         agency_id = handle_bets(self, client_sock)
-        msg = client_sock.recv(1024).rstrip().decode('utf-8')
         if agency_id:
             with self._lock_agency_sockets:
                 self._agency_sockets[agency_id] = client_sock

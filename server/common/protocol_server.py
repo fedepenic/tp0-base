@@ -21,6 +21,11 @@ def handle_bets(server, client_sock):
         response = f'Error processing batch: {str(e)}\n'
     finally:
         __send_final_response(client_sock, response)
+    
+    finished_sending_bets_msg = client_sock.recv(1024).rstrip().decode('utf-8')
+
+    logging.info(f'Agency {agency} message: {finished_sending_bets_msg} ')
+
     return agency
 
 def __receive_number_of_bets(client_sock):
