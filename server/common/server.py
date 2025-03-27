@@ -32,14 +32,17 @@ class Server:
             try:
                 client_sock = self.__accept_new_connection()
                 if client_sock:
-                    agency_id = self.__handle_bets(client_sock)
-                    msg = client_sock.recv(1024).rstrip().decode('utf-8')
-                    if agency_id:
-                        self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
-                    self.__process_lottery_results()
+                    self.__handle_new_client(client_sock)
+                self.__process_lottery_results()
             except OSError:
                 break  # Stop accepting connections when shutting down
 
+    def __handle_new_client(self, client_sock):
+        agency_id = self.__handle_bets(client_sock)
+        msg = client_sock.recv(1024).rstrip().decode('utf-8')
+        if agency_id:
+            self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
+    
     def __handle_client_connection(self, client_sock):
         """Read message from a specific client socket and close the socket."""
         try:
