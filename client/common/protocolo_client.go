@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+func (c *Client) sendMessage(message string) error {
+	_, err := fmt.Fprintf(c.conn, message)
+	if err != nil {
+		return fmt.Errorf("error sending message: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) SendBets(batchMaxAmount int) {
 	agency, err := getAgencyID()
 	if err != nil {
@@ -40,8 +48,7 @@ func (c *Client) SendBets(batchMaxAmount int) {
 
 	log.Infof("Final server response: %s", finalResponse)
 
-	_, err = fmt.Fprintf(c.conn, "FINISHED SENDING BETS\n")
-	if err != nil {
+	if err := c.sendMessage("FINISHED SENDING BETS\n"); err != nil {
 		log.Fatalf("error: %v", err)
 	}
 
@@ -49,7 +56,6 @@ func (c *Client) SendBets(batchMaxAmount int) {
 		log.Fatalf("error: %v", err)
 	}
 }
-
 
 func getAgencyID() (string, error) {
 	agency := os.Getenv("CLI_ID")
@@ -69,8 +75,8 @@ func (c *Client) initializeConnection() error {
 }
 
 func (c *Client) sendTotalBets(totalBets int) error {
-	_, err := fmt.Fprintf(c.conn, "%d\n", totalBets)
-	if err != nil {
+	message := fmt.Sprintf("%d\n", totalBets)
+	if err := c.sendMessage(message); err != nil {
 		return fmt.Errorf("error sending total bets count: %w", err)
 	}
 	return expectAcknowledgment(c.conn, "ACK_TOTAL_BETS")
@@ -87,7 +93,7 @@ func (c *Client) sendBetsInBatches(bets []string, batchMaxAmount int, agency str
 		batch := bets[i:end]
 		message := fmt.Sprintf("BATCH_BET:%s|%d|%s\n", agency, batchMaxAmount, strings.Join(batch, ";"))
 
-		if _, err := fmt.Fprintf(c.conn, message); err != nil {
+		if err := c.sendMessage(message); err != nil {
 			return fmt.Errorf("error sending batch: %w", err)
 		}
 
