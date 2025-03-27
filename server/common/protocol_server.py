@@ -18,7 +18,8 @@ def handle_bets(server, client_sock):
     try:
         number_of_bets = __receive_number_of_bets(client_sock)
         all_bets, agency = __receive_all_batches(client_sock, number_of_bets)
-        __store_received_bets(all_bets)
+        with server._lock_file_write:
+            __store_received_bets(all_bets)
 
         with server._lock_completed_agencies:
             server._completed_agencies.add(agency)

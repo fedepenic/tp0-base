@@ -18,6 +18,7 @@ class Server:
 
         self._lock_completed_agencies = threading.Lock()
         self._lock_agency_sockets = threading.Lock()
+        self._lock_file_write = threading.Lock()
 
         signal.signal(signal.SIGTERM, self.__handle_shutdown)
         signal.signal(signal.SIGINT, self.__handle_shutdown)
