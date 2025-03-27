@@ -10,7 +10,7 @@ import (
 )
 
 func (c *Client) sendMessage(message string) error {
-	_, err := fmt.Fprintf(c.conn, message)
+	_, err := c.conn.Write([]byte(message))
 	if err != nil {
 		return fmt.Errorf("error sending message: %w", err)
 	}
