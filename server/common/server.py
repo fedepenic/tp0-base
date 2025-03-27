@@ -3,6 +3,7 @@ import logging
 import signal
 import sys
 import os
+import threading
 from common.utils import store_bets, load_bets, has_won, Bet
 
 
@@ -16,52 +17,52 @@ class Server:
         self._total_agencies = int(os.getenv("CANTIDAD_CLIENTES", 0))
         self._agency_sockets = {}  # Diccionario para almacenar sockets por agencia ID
 
+        self._lock_completed_agencies = threading.Lock()
+        self._lock_agency_sockets = threading.Lock()
+
         signal.signal(signal.SIGTERM, self.__shutdown)
         signal.signal(signal.SIGINT, self.__shutdown)
 
     def __shutdown(self, signum, frame):
         self._running = False
         self._server_socket.close()
-        for agency_id, client_sock in self._agency_sockets.items():
-            client_sock.close()
+
+        with self._lock_agency_sockets:
+            for agency_id, client_sock in self._agency_sockets.items():
+                client_sock.close()
+
         logging.info('action: shutdown | result: success')
         sys.exit(0)
 
     def run(self):
+        thread_counter = 0
         while self._running:
             try:
                 client_sock = self.__accept_new_connection()
                 if client_sock:
-                    self.__handle_new_client(client_sock)
-                self.__process_lottery_results()
+                    threading.Thread(target=self.__handle_new_client, args=(client_sock,), daemon=True).start()
+                    thread_counter += 1
+                if thread_counter >= self._total_agencies:
+                    while self._running:
+                        self.__process_lottery_results()
             except OSError:
+                self.__shutdown(None, None)
                 break  # Stop accepting connections when shutting down
+        
+        self.__shutdown(None, None)
 
     def __handle_new_client(self, client_sock):
         agency_id = self.__handle_bets(client_sock)
         msg = client_sock.recv(1024).rstrip().decode('utf-8')
         if agency_id:
-            self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
+            with self._lock_agency_sockets:
+                self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
     
-    def __handle_client_connection(self, client_sock):
-        """Read message from a specific client socket and close the socket."""
-        try:
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
-        except OSError as e:
-            logging.error(f"action: receive_message | result: fail | error: {e}")
-        finally:
-            client_sock.close()
-
     def __process_lottery_results(self):
         if len(self._completed_agencies) >= self._total_agencies:
             logging.info('action: sorteo | result: success')
             
-            winning_documents = {}
-            for agency in self._completed_agencies:
-                winning_documents[agency] = []
+            winning_documents = {agency: [] for agency in self._completed_agencies}
 
             for bet in load_bets():
                 if has_won(bet):
@@ -78,6 +79,7 @@ class Server:
                         logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
                     except OSError as e:
                         logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')
+            self._running = False
 
     def __handle_bets(self, client_sock):
         agency = None
@@ -85,7 +87,10 @@ class Server:
             number_of_bets = self.__receive_number_of_bets(client_sock)
             all_bets, agency = self.__receive_all_batches(client_sock, number_of_bets)
             self.__store_received_bets(all_bets)
-            self._completed_agencies.add(agency)
+
+            with self._lock_completed_agencies:
+                self._completed_agencies.add(agency)
+
             response = f'Successfully stored {len(all_bets)} bets for agency {agency}\n'
         except (ValueError, OSError) as e:
             logging.error(f"action: apuesta_recibida | result: fail | cantidad: {number_of_bets}")
