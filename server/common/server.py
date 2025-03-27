@@ -1,9 +1,9 @@
 import socket
 import logging
 import signal
-import sys
 import os
 import threading
+from common.protocol_server import shutdown
 from common.utils import store_bets, load_bets, has_won, Bet
 
 
@@ -20,19 +20,12 @@ class Server:
         self._lock_completed_agencies = threading.Lock()
         self._lock_agency_sockets = threading.Lock()
 
-        signal.signal(signal.SIGTERM, self.__shutdown)
-        signal.signal(signal.SIGINT, self.__shutdown)
+        signal.signal(signal.SIGTERM, self.__handle_shutdown)
+        signal.signal(signal.SIGINT, self.__handle_shutdown)
 
-    def __shutdown(self, signum, frame):
+    def __handle_shutdown(self, signum, frame):
         self._running = False
-        self._server_socket.close()
-
-        with self._lock_agency_sockets:
-            for agency_id, client_sock in self._agency_sockets.items():
-                client_sock.close()
-
-        logging.info('action: shutdown | result: success')
-        sys.exit(0)
+        shutdown(self._server_socket, self._agency_sockets, self._lock_agency_sockets)
 
     def run(self):
         thread_counter = 0
@@ -45,11 +38,11 @@ class Server:
                 if thread_counter >= self._total_agencies:
                     while self._running:
                         self.__process_lottery_results()
-            except OSError:
-                self.__shutdown(None, None)
-                break  # Stop accepting connections when shutting down
+            except OSError as e:
+                logging.error(f"action: run | result: failure | error: {e} | description: Error handling new connection or processing lottery results")
+                self.__handle_shutdown(None, None)
         
-        self.__shutdown(None, None)
+        self.__handle_shutdown(None, None)
 
     def __handle_new_client(self, client_sock):
         agency_id = self.__handle_bets(client_sock)
