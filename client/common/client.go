@@ -76,6 +76,7 @@ func (c *Client) handleSignals() {
 
 // cleanup closes the client connection gracefully
 func (c *Client) cleanup() {
+	time.Sleep(5 * time.Second)
 	if c.conn != nil {
 		// log.Infof("action: cleanup | result: closing_connection | client_id: %v", c.config.ID)
 		c.conn.Close()
