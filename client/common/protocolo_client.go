@@ -17,6 +17,14 @@ func (c *Client) sendMessage(message string) error {
 	return nil
 }
 
+func readMessage(conn net.Conn) (string, error) {
+	message, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("error reading message: %w", err)
+	}
+	return strings.TrimSpace(message), nil
+}
+
 func (c *Client) SendBets(batchMaxAmount int) {
 	agency, err := getAgencyID()
 	if err != nil {
@@ -107,19 +115,19 @@ func (c *Client) sendBetsInBatches(bets []string, batchMaxAmount int, agency str
 }
 
 func expectAcknowledgment(conn net.Conn, expected string) error {
-	ack, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil || strings.TrimSpace(ack) != expected {
+	ack, err := readMessage(conn)
+	if err != nil || ack != expected {
 		return fmt.Errorf("unexpected acknowledgment: %v", err)
 	}
 	return nil
 }
 
 func receiveServerResponse(conn net.Conn) (string, error) {
-	response, err := bufio.NewReader(conn).ReadString('\n')
+	response, err := readMessage(conn)
 	if err != nil {
 		return "", fmt.Errorf("error receiving final response: %w", err)
 	}
-	return strings.TrimSpace(response), nil
+	return response, nil
 }
 
 func readBetsFromFile(filePath string) ([]string, error) {
@@ -145,12 +153,10 @@ func readBetsFromFile(filePath string) ([]string, error) {
 }
 
 func (c *Client) receiveWinners() error {
-	winnersMessage, err := bufio.NewReader(c.conn).ReadString('\n')
+	winnersMessage, err := readMessage(c.conn)
 	if err != nil {
 		return fmt.Errorf("error receiving winners: %w", err)
 	}
-
-	winnersMessage = strings.TrimSpace(winnersMessage)
 
 	const prefix = "GANADORES: "
 	if !strings.HasPrefix(winnersMessage, prefix) {
