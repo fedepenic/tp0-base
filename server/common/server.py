@@ -59,7 +59,7 @@ class Server:
                 self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
     
     def __process_lottery_results(self):
-        if len(self._completed_agencies) >= self._total_agencies:
+        if (len(self._completed_agencies) >= self._total_agencies and len(self._agency_sockets) >= self._total_agencies):
             logging.info('action: sorteo | result: success')
             
             winning_documents = {agency: [] for agency in self._completed_agencies}
