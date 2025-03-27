@@ -67,21 +67,18 @@ func (c *Client) handleSignals() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	<-sigCh // Wait for a termination signal
+	<-sigCh
 
-	// log.Warningf("action: termination_signal | result: received | client_id: %v", c.config.ID)
 	c.cleanup()
 	os.Exit(0)
 }
 
 // cleanup closes the client connection gracefully
 func (c *Client) cleanup() {
-	// time.Sleep(5 * time.Second)
 	if c.conn != nil {
-		// log.Infof("action: cleanup | result: closing_connection | client_id: %v", c.config.ID)
 		c.conn.Close()
 	}
-	close(c.stopCh) // Signal to stop processing
+	close(c.stopCh)
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
