@@ -3,8 +3,8 @@ import logging
 import signal
 import os
 import threading
-from common.protocol_server import shutdown
-from common.utils import store_bets, load_bets, has_won, Bet
+from common.protocol_server import shutdown, process_lottery_results
+from common.utils import store_bets, Bet
 
 
 class Server:
@@ -15,7 +15,7 @@ class Server:
         self._running = True
         self._completed_agencies = set()
         self._total_agencies = int(os.getenv("CANTIDAD_CLIENTES", 0))
-        self._agency_sockets = {}  # Diccionario para almacenar sockets por agencia ID
+        self._agency_sockets = {}
 
         self._lock_completed_agencies = threading.Lock()
         self._lock_agency_sockets = threading.Lock()
@@ -37,7 +37,7 @@ class Server:
                     thread_counter += 1
                 if thread_counter >= self._total_agencies:
                     while self._running:
-                        self.__process_lottery_results()
+                        process_lottery_results(self)
             except OSError as e:
                 logging.error(f"action: run | result: failure | error: {e} | description: Error handling new connection or processing lottery results")
                 self.__handle_shutdown(None, None)
@@ -49,30 +49,8 @@ class Server:
         msg = client_sock.recv(1024).rstrip().decode('utf-8')
         if agency_id:
             with self._lock_agency_sockets:
-                self._agency_sockets[agency_id] = client_sock  # Guardar el socket de la agencia
+                self._agency_sockets[agency_id] = client_sock
     
-    def __process_lottery_results(self):
-        if (len(self._completed_agencies) >= self._total_agencies and len(self._agency_sockets) >= self._total_agencies):
-            logging.info('action: sorteo | result: success')
-            
-            winning_documents = {agency: [] for agency in self._completed_agencies}
-
-            for bet in load_bets():
-                if has_won(bet):
-                    winning_documents[str(bet.agency)].append(bet.document)
-            
-            for agency, documents in winning_documents.items():
-                if str(agency) in self._agency_sockets:
-                    if not documents:
-                        winner_message = 'GANADORES: None\n'
-                    else:
-                        winner_message = f'GANADORES: {" ,".join(documents)}\n'
-                    try:
-                        self._agency_sockets[str(agency)].sendall(winner_message.encode('utf-8'))
-                        logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
-                    except OSError as e:
-                        logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')
-            self._running = False
 
     def __handle_bets(self, client_sock):
         agency = None
@@ -90,7 +68,7 @@ class Server:
             response = f'Error processing batch: {str(e)}\n'
         finally:
             self.__send_final_response(client_sock, response)
-        return agency  # Devolver el ID de la agencia para almacenarlo
+        return agency
 
     def __receive_number_of_bets(self, client_sock):
         total_bets_data = client_sock.recv(1024).decode('utf-8').strip()
