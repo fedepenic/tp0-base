@@ -3,8 +3,7 @@ import logging
 import signal
 import os
 import threading
-from common.protocol_server import shutdown, process_lottery_results
-from common.utils import store_bets, Bet
+from common.protocol_server import shutdown, process_lottery_results, handle_bets
 
 
 class Server:
@@ -44,88 +43,14 @@ class Server:
         
         self.__handle_shutdown(None, None)
 
+
     def __handle_new_client(self, client_sock):
-        agency_id = self.__handle_bets(client_sock)
+        agency_id = handle_bets(self, client_sock)
         msg = client_sock.recv(1024).rstrip().decode('utf-8')
         if agency_id:
             with self._lock_agency_sockets:
                 self._agency_sockets[agency_id] = client_sock
     
-
-    def __handle_bets(self, client_sock):
-        agency = None
-        try:
-            number_of_bets = self.__receive_number_of_bets(client_sock)
-            all_bets, agency = self.__receive_all_batches(client_sock, number_of_bets)
-            self.__store_received_bets(all_bets)
-
-            with self._lock_completed_agencies:
-                self._completed_agencies.add(agency)
-
-            response = f'Successfully stored {len(all_bets)} bets for agency {agency}\n'
-        except (ValueError, OSError) as e:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {number_of_bets}")
-            response = f'Error processing batch: {str(e)}\n'
-        finally:
-            self.__send_final_response(client_sock, response)
-        return agency
-
-    def __receive_number_of_bets(self, client_sock):
-        total_bets_data = client_sock.recv(1024).decode('utf-8').strip()
-        if not total_bets_data.isdigit():
-            raise ValueError("Invalid total bets count")
-        total_bets = int(total_bets_data)
-        logging.info(f"Received total bets count: {total_bets}")
-        self.__acknowledge_client(client_sock, "ACK_TOTAL_BETS")
-        return total_bets
-
-    def __receive_all_batches(self, client_sock, total_bets):
-        bets_received = 0
-        all_bets = []
-        agency = None
-        while bets_received < total_bets:
-            batch_bets, batch_agency = self.__receive_bet_batch(client_sock)
-            all_bets.extend(batch_bets)
-            bets_received += len(batch_bets)
-            agency = batch_agency
-            logging.info(f"Received batch, total bets received: {bets_received}/{total_bets}")
-            self.__acknowledge_client(client_sock, "ACK_BATCH_RECEIVED")
-        return all_bets, agency
-
-    def __receive_bet_batch(self, client_sock):
-        bet_data = client_sock.recv(4096).rstrip().decode('utf-8')
-        if not bet_data.startswith("BATCH_BET:"):
-            raise ValueError("Invalid batch format")
-        return self.__parse_bet_batch(bet_data[10:])
-
-    def __parse_bet_batch(self, batch_data):
-        parts = batch_data.split("|", 2)
-        if len(parts) != 3:
-            raise ValueError("Batch message must contain 3 parts: agency, batchMaxAmount, and bets")
-        agency, batch_max_amount, bets_str = parts
-        batch_max_amount = int(batch_max_amount)
-        batch_bets = []
-        for bet_entry in bets_str.split(";"):
-            bet_fields = bet_entry.split(",")
-            bet_fields.insert(0, agency)
-            if len(bet_fields) != 6:
-                logging.warning(f"Skipping invalid bet: {bet_entry}")
-                continue
-            batch_bets.append(Bet(*bet_fields))
-        if not batch_bets:
-            raise ValueError("No valid bets found in batch")
-        return batch_bets, agency
-
-    def __acknowledge_client(self, client_sock, message):
-        client_sock.sendall(f"{message}\n".encode('utf-8'))
-
-    def __store_received_bets(self, bets):
-        store_bets(bets)
-        logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
-
-    def __send_final_response(self, client_sock, response):
-        logging.info(f"Server response: {response.strip()}")
-        client_sock.sendall(response.encode('utf-8'))
 
     def __accept_new_connection(self):
         """Accept new connections, handling shutdown gracefully."""
