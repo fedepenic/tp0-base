@@ -2,6 +2,8 @@ import logging
 import sys
 from common.utils import store_bets, load_bets, has_won, Bet
 
+def __send_message(sock, message):
+    sock.sendall(message.encode('utf-8'))
 
 def handle_bets(server, client_sock):
     agency = None
@@ -68,7 +70,7 @@ def __parse_bet_batch(batch_data):
     return batch_bets, agency
 
 def __acknowledge_client(client_sock, message):
-    client_sock.sendall(f"{message}\n".encode('utf-8'))
+    __send_message(client_sock, f"{message}\n")
 
 def __store_received_bets(bets):
     store_bets(bets)
@@ -76,7 +78,7 @@ def __store_received_bets(bets):
 
 def __send_final_response(client_sock, response):
     logging.info(f"Server response: {response.strip()}")
-    client_sock.sendall(response.encode('utf-8'))
+    __send_message(client_sock, response)
 
 def process_lottery_results(server):
     if (len(server._completed_agencies) >= server._total_agencies and len(server._agency_sockets) >= server._total_agencies):
@@ -95,21 +97,20 @@ def process_lottery_results(server):
                 else:
                     winner_message = f'GANADORES: {" ,".join(documents)}\n'
                 try:
-                    server._agency_sockets[str(agency)].sendall(winner_message.encode('utf-8'))
+                    __send_message(server._agency_sockets[str(agency)], winner_message)
                     logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
                 except OSError as e:
                     logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')
         server._running = False
 
-
 def shutdown(server_socket, agency_sockets, lock_agency_sockets):
     """Handles graceful shutdown of the server."""
-
+    
     server_socket.close()
-
+    
     with lock_agency_sockets:
         for agency_id, client_sock in agency_sockets.items():
             client_sock.close()
-
+    
     logging.info('action: shutdown | result: success')
     sys.exit(0)
