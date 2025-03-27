@@ -115,3 +115,28 @@ Cada agencia recibe esta información, la procesa y puede imprimir los resultado
 ## Consideraciones y Mejoras Futuras
 
 El protocolo descrito actualmente no contempla un sistema de reintentos en caso de pérdida de paquetes o en situaciones en las que los datos lleguen corrompidos. Además, la serialización de la cantidad de apuestas y los mensajes de confirmación se podría mejorar en el futuro para garantizar una comunicación más robusta y eficiente. Con más tiempo, se podrían implementar soluciones para manejar estos casos, como la introducción de un mecanismo de control de errores y reenvío de mensajes fallidos.
+
+# Mecanismos de Sincronización (Parte 3)
+
+Para permitir que los diferentes clientes o agencias se conecten y procesen apuestas de manera concurrente, se decidió implementar el manejo de conexiones mediante hilos (_threads_), utilizando la biblioteca `threading` de Python.
+
+Cada vez que se acepta una nueva conexión, es decir, cuando un cliente se conecta al servidor, se asigna un nuevo hilo para su gestión. Esto permite que el sistema operativo optimice el uso de los recursos, minimizando tiempos de espera y permitiendo que se procesen múltiples conexiones en paralelo. Gracias a esta estrategia, las apuestas pueden ser registradas de manera más eficiente en el servidor. En consecuencia, el método `__handle_new_client` se ejecuta en un hilo independiente para cada cliente que establece una conexión.
+
+### Gestión de Recursos Compartidos
+
+El uso de múltiples hilos conlleva la existencia de recursos compartidos, los cuales pueden generar resultados inesperados si no se manejan adecuadamente. Para evitar condiciones de carrera (_race conditions_) y garantizar la consistencia de los datos, se implementaron mecanismos de sincronización mediante _locks_. Estos aseguran que determinadas operaciones se realicen de manera atómica, evitando modificaciones simultáneas que puedan comprometer la integridad del sistema.
+
+Dos de los atributos del servidor que fueron protegidos con _locks_ son:
+
+- **`_completed_agencies`**: Lista que almacena los identificadores de las agencias que han finalizado el proceso de envío de apuestas.
+- **`_agency_sockets`**: Diccionario que asocia cada agencia con su respectivo socket de conexión.
+
+Al utilizar _locks_, se garantiza que estos recursos solo sean modificados por un hilo a la vez, evitando inconsistencias o corrupción de datos.
+
+### Sincronización en la Escritura de Archivos
+
+Otro caso relevante en el que se aplicó un mecanismo de sincronización es el método `store_bets(bets)`, encargado de escribir las apuestas en un archivo. Dado que múltiples hilos pueden intentar acceder al archivo simultáneamente, existe el riesgo de que el sistema operativo interrumpa la operación de escritura y le ceda el control a otro hilo, lo que podría generar datos corruptos o inconsistentes. Para mitigar este problema, se implementó un _lock_ adicional que asegura que la escritura en el archivo se realice de manera exclusiva por un solo hilo a la vez.
+
+Por otro lado, este problema no se presenta en el método `load_bets()`, encargado de leer las apuestas del archivo. Dado que la lectura se realiza en el hilo principal, y únicamente después de que todas las apuestas han sido registradas, no es necesario aplicar un _lock_ en este caso.
+
+El uso de estos mecanismos de sincronización garantiza la correcta ejecución del sistema en un entorno concurrente, asegurando la integridad de los datos y evitando conflictos entre los diferentes hilos.
