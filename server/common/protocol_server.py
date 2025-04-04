@@ -7,63 +7,65 @@ def __send_message(sock, message):
 
 def __receive_message(sock, buffer_size=1024):
     try:
-        data = sock.recv(buffer_size).decode('utf-8').strip()
-        return data
+        buffer = b''
+        while True:
+            chunk = sock.recv(buffer_size)
+            if not chunk:
+                raise ConnectionError("Socket closed before message was fully received")
+            buffer += chunk
+            if b'\n' in buffer:
+                break
+        delimiter_index = buffer.index(b'\n') + 1
+        message = buffer[:delimiter_index]
+        return message.decode('utf-8')
     except OSError as e:
         logging.error(f"Error receiving data: {e}")
         raise
 
-def handle_bets(server, client_sock):
+def handle_bets(lock_file_write, client_sock):
     agency = None
     try:
-        number_of_bets = __receive_number_of_bets(client_sock)
-        all_bets, agency = __receive_all_batches(client_sock, number_of_bets)
-        with server._lock_file_write:
-            __store_received_bets(all_bets)
-
-        with server._lock_completed_agencies:
-            server._completed_agencies.add(agency)
-
-        response = f'Successfully stored {len(all_bets)} bets for agency {agency}\n'
+        __await_start_bets_signal(client_sock)
+        number_of_bets_received, agency = __receive_all_batches(lock_file_write, client_sock)
+        response = f'Successfully stored {number_of_bets_received} bets for agency {agency}\n'
     except (ValueError, OSError) as e:
-        logging.error(f"action: apuesta_recibida | result: fail | cantidad: {number_of_bets}")
+        logging.error(f"action: apuesta_recibida | result: fail | cantidad: {number_of_bets_received}")
         response = f'Error processing batch: {str(e)}\n'
     finally:
         __send_final_response(client_sock, response)
 
-    finished_sending_bets_msg = __receive_message(client_sock)
-
-    logging.info(f'Agency {agency} message: {finished_sending_bets_msg}')
-
     return agency
 
-def __receive_number_of_bets(client_sock):
-    total_bets_data = __receive_message(client_sock)
-    if not total_bets_data.isdigit():
-        raise ValueError("Invalid total bets count")
-    total_bets = int(total_bets_data)
-    logging.info(f"Received total bets count: {total_bets}")
-    __acknowledge_client(client_sock, "ACK_TOTAL_BETS")
-    return total_bets
+def __await_start_bets_signal(client_sock):
+    message = __receive_message(client_sock)
+    if message.strip() != "INICIO_ENVIO_BETS":
+        raise ValueError("Expected 'INICIO_ENVIO_BETS' but received something else")
+    __acknowledge_client(client_sock, "ACK_INICIO_ENVIO_BETS")
 
-def __receive_all_batches(client_sock, total_bets):
-    bets_received = 0
-    all_bets = []
+def __receive_all_batches(lock_file_write, client_sock):
+    number_of_bets_received = 0
+    all_bets_received = False
     agency = None
-    while bets_received < total_bets:
-        batch_bets, batch_agency = __receive_bet_batch(client_sock)
-        all_bets.extend(batch_bets)
-        bets_received += len(batch_bets)
-        agency = batch_agency
-        logging.info(f"Received batch, total bets received: {bets_received}/{total_bets}")
-        __acknowledge_client(client_sock, "ACK_BATCH_RECEIVED")
-    return all_bets, agency
+    while all_bets_received != True:
+        bet_batch, batch_agency, all_bets_received = __receive_bet_batch(client_sock)
+        if all_bets_received != True:
+            number_of_bets_received += len(bet_batch)
+            agency = batch_agency
+            logging.info(f"Received batch, total bets received: {number_of_bets_received}")
+            with lock_file_write:
+                __store_received_bets(bet_batch)
+            __acknowledge_client(client_sock, "ACK_BATCH_RECEIVED")
+    return number_of_bets_received, agency
 
 def __receive_bet_batch(client_sock):
     bet_data = __receive_message(client_sock, 4096)
-    if not bet_data.startswith("BATCH_BET:"):
+    if not (bet_data.startswith("BATCH_BET:") or bet_data.startswith("END_OF_BETS")):
         raise ValueError("Invalid batch format")
-    return __parse_bet_batch(bet_data[10:])
+    if bet_data.startswith("END_OF_BETS"):
+        return None, None, True
+    else:
+        batch_bets, agency = __parse_bet_batch(bet_data[10:])
+        return batch_bets, agency, False
 
 def __parse_bet_batch(batch_data):
     parts = batch_data.split("|", 2)
@@ -94,28 +96,26 @@ def __send_final_response(client_sock, response):
     logging.info(f"Server response: {response.strip()}")
     __send_message(client_sock, response)
 
-def process_lottery_results(server):
-    if (len(server._completed_agencies) >= server._total_agencies and len(server._agency_sockets) >= server._total_agencies):
-        logging.info('action: sorteo | result: success')
-        
-        winning_documents = {agency: [] for agency in server._completed_agencies}
+def process_lottery_results(agency_sockets):
+    logging.info('action: sorteo | result: success')
+    
+    winning_documents = {agency: [] for agency in agency_sockets.keys()}
 
-        for bet in load_bets():
-            if has_won(bet):
-                winning_documents[str(bet.agency)].append(bet.document)
-        
-        for agency, documents in winning_documents.items():
-            if str(agency) in server._agency_sockets:
-                if not documents:
-                    winner_message = 'GANADORES: None\n'
-                else:
-                    winner_message = f'GANADORES: {" ,".join(documents)}\n'
-                try:
-                    __send_message(server._agency_sockets[str(agency)], winner_message)
-                    logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
-                except OSError as e:
-                    logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')
-        server._running = False
+    for bet in load_bets():
+        if has_won(bet):
+            winning_documents[str(bet.agency)].append(bet.document)
+    
+    for agency, documents in winning_documents.items():
+        if str(agency) in agency_sockets:
+            if not documents:
+                winner_message = 'GANADORES: None\n'
+            else:
+                winner_message = f'GANADORES: {" ,".join(documents)}\n'
+            try:
+                __send_message(agency_sockets[str(agency)], winner_message)
+                logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
+            except OSError as e:
+                logging.error(f'action: send_winners | result: fail | agency: {agency} | error: {e}')
 
 def shutdown(server_socket, agency_sockets, lock_agency_sockets):
     """Handles graceful shutdown of the server."""
@@ -127,4 +127,3 @@ def shutdown(server_socket, agency_sockets, lock_agency_sockets):
             client_sock.close()
     
     logging.info('action: shutdown | result: success')
-    sys.exit(0)

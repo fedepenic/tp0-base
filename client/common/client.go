@@ -68,7 +68,6 @@ func (c *Client) handleSignals() {
 	<-sigCh
 
 	c.cleanup()
-	os.Exit(0)
 }
 
 // cleanup closes the client connection gracefully

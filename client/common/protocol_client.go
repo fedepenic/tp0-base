@@ -3,17 +3,26 @@ package common
 import (
 	"bufio"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
 )
 
 func (c *Client) sendMessage(message string) error {
-	_, err := c.conn.Write([]byte(message))
-	if err != nil {
-		return fmt.Errorf("error sending message: %w", err)
+	data := []byte(message)
+	totalWritten := 0
+
+	for totalWritten < len(data) {
+		n, err := c.conn.Write(data[totalWritten:])
+		if err != nil {
+			return fmt.Errorf("error sending message: %w", err)
+		}
+		totalWritten += n
 	}
+
 	return nil
 }
 
@@ -31,21 +40,12 @@ func (c *Client) SendBets(batchMaxAmount int) {
 		log.Fatalf("error: %v", err)
 	}
 
-	bets, err := loadBets(agency)
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
-
 	if err := c.initializeConnection(); err != nil {
 		log.Fatalf("error: %v", err)
 	}
 	defer c.cleanup()
 
-	if err := c.sendTotalBets(len(bets)); err != nil {
-		log.Fatalf("error: %v", err)
-	}
-
-	if err := c.sendBetsInBatches(bets, batchMaxAmount, agency); err != nil {
+	if err := c.sendBetBatches(batchMaxAmount, agency); err != nil {
 		log.Fatalf("error: %v", err)
 	}
 
@@ -55,10 +55,6 @@ func (c *Client) SendBets(batchMaxAmount int) {
 	}
 
 	log.Infof("Final server response: %s", finalResponse)
-
-	if err := c.sendMessage("FINISHED SENDING BETS\n"); err != nil {
-		log.Fatalf("error: %v", err)
-	}
 
 	if err := c.receiveWinners(); err != nil {
 		log.Fatalf("error: %v", err)
@@ -73,44 +69,104 @@ func getAgencyID() (string, error) {
 	return agency, nil
 }
 
-func loadBets(agency string) ([]string, error) {
-	filePath := fmt.Sprintf("./.data/agency-%s.csv", agency)
-	return readBetsFromFile(filePath)
-}
-
 func (c *Client) initializeConnection() error {
 	return c.createClientSocket()
 }
 
-func (c *Client) sendTotalBets(totalBets int) error {
-	message := fmt.Sprintf("%d\n", totalBets)
-	if err := c.sendMessage(message); err != nil {
-		return fmt.Errorf("error sending total bets count: %w", err)
+func (c *Client) sendBetBatches(batchMaxAmount int, agency string) error {
+	if err := c.sendStartOfBetsMessage(); err != nil {
+		return err
 	}
-	return expectAcknowledgment(c.conn, "ACK_TOTAL_BETS")
+
+	file, err := openCSVFile(agency)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	if err := c.processBets(reader, batchMaxAmount, agency); err != nil {
+		return err
+	}
+
+	return c.sendEndOfBetsMessage()
 }
 
-func (c *Client) sendBetsInBatches(bets []string, batchMaxAmount int, agency string) error {
-	totalBets := len(bets)
-	for i := 0; i < totalBets; i += batchMaxAmount {
-		end := i + batchMaxAmount
-		if end > totalBets {
-			end = totalBets
+func (c *Client) sendStartOfBetsMessage() error {
+	if err := c.sendMessage("INICIO_ENVIO_BETS\n"); err != nil {
+		return fmt.Errorf("error sending start of bets message: %w", err)
+	}
+
+	if err := expectAcknowledgment(c.conn, "ACK_INICIO_ENVIO_BETS"); err != nil {
+		return fmt.Errorf("error receiving ACK for start of bets: %w", err)
+	}
+
+	return nil
+}
+
+func openCSVFile(agency string) (*os.File, error) {
+	filePath := fmt.Sprintf("./.data/agency-%s.csv", agency)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("error opening file: %w", err)
+	}
+	return file, nil
+}
+
+func (c *Client) processBets(reader *csv.Reader, batchMaxAmount int, agency string) error {
+	var batch []string
+
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return c.flushBatch(batch, batchMaxAmount, agency)
+			}
+			return fmt.Errorf("error reading file: %w", err)
 		}
 
-		batch := bets[i:end]
-		message := fmt.Sprintf("BATCH_BET:%s|%d|%s\n", agency, batchMaxAmount, strings.Join(batch, ";"))
-
-		if err := c.sendMessage(message); err != nil {
-			return fmt.Errorf("error sending batch: %w", err)
+		if len(record) != 5 {
+			continue
 		}
 
-		if err := expectAcknowledgment(c.conn, "ACK_BATCH_RECEIVED"); err != nil {
+		batch = append(batch, strings.Join(record, ","))
+		if len(batch) == batchMaxAmount {
+			if err := c.sendBatch(batch, batchMaxAmount, agency); err != nil {
+				return err
+			}
+			batch = nil
+		}
+	}
+}
+
+func (c *Client) flushBatch(batch []string, batchMaxAmount int, agency string) error {
+	if len(batch) > 0 {
+		if err := c.sendBatch(batch, batchMaxAmount, agency); err != nil {
 			return err
 		}
-
-		log.Infof("action: apuesta_enviada | result: success | batch_size: %d", len(batch))
 	}
+	return nil
+}
+
+func (c *Client) sendEndOfBetsMessage() error {
+	if err := c.sendMessage("END_OF_BETS\n"); err != nil {
+		return fmt.Errorf("error sending end of bets message: %w", err)
+	}
+	log.Infof("action: end_of_bets_sent | result: success")
+	return nil
+}
+
+func (c *Client) sendBatch(batch []string, batchMaxAmount int, agency string) error {
+	message := fmt.Sprintf("BATCH_BET:%s|%d|%s\n", agency, batchMaxAmount, strings.Join(batch, ";"))
+	if err := c.sendMessage(message); err != nil {
+		return fmt.Errorf("error sending batch: %w", err)
+	}
+
+	if err := expectAcknowledgment(c.conn, "ACK_BATCH_RECEIVED"); err != nil {
+		return fmt.Errorf("error receiving acknowledgment: %w", err)
+	}
+
+	log.Infof("action: apuesta_enviada | result: success | batch_size: %d", len(batch))
 	return nil
 }
 
@@ -128,28 +184,6 @@ func receiveServerResponse(conn net.Conn) (string, error) {
 		return "", fmt.Errorf("error receiving final response: %w", err)
 	}
 	return response, nil
-}
-
-func readBetsFromFile(filePath string) ([]string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	var bets []string
-	for {
-		record, err := reader.Read()
-		if err != nil {
-			break
-		}
-		if len(record) != 5 {
-			continue
-		}
-		bets = append(bets, strings.Join(record, ","))
-	}
-	return bets, nil
 }
 
 func (c *Client) receiveWinners() error {

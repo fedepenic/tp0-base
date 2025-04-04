@@ -62,43 +62,38 @@ Este documento describe el protocolo de comunicación utilizado entre los difere
 
 ## Descripción General del Protocolo
 
-El protocolo de comunicación comienza con los clientes enviando la cantidad de apuestas que desean procesar. Cada agencia debe contar la cantidad de apuestas y enviarla al servidor para su procesamiento. Actualmente, no se implementa un mecanismo de _handshake_ entre los clientes y el servidor. Sin embargo, se contempla la posibilidad de implementar un _Three-Way Handshake_ en el futuro, similar a otros protocolos.
+El protocolo de comunicación se inicia con el envío, por parte del cliente, de un mensaje que indica el comienzo del proceso de transmisión de apuestas en bloques (_batches_). Ante este mensaje, el servidor responde con una confirmación (_ACK_), lo que establece una sincronización inicial entre ambas partes.
 
-### Paso 1: Envío de la Cantidad de Apuestas
+Actualmente, la implementación no incluye un mecanismo formal de _handshake_ entre el cliente y el servidor. Sin embargo, se contempla la posibilidad de incorporar en el futuro un esquema de _Three-Way Handshake_, similar al utilizado en otros protocolos de comunicación, con el objetivo de reforzar la fiabilidad del proceso de inicio.
 
-El cliente envía al servidor la cantidad de apuestas que tiene intención de procesar. El servidor, al recibir esta información, responde con un mensaje de confirmación, indicando que ha recibido correctamente el número de apuestas.
+Cabe destacar que todos los mensajes intercambiados finalizan con el carácter delimitador `\n`, lo cual facilita la lectura y escritura de datos a través de sockets, asegurando una correcta separación de los mensajes sin pérdida de información.
 
-**Mensaje enviado por el servidor**:  
-`ACK_TOTAL_BETS`
+### Paso 1: Inicio del proceso de transmisión de apuestas (Bets)
 
-Este mensaje confirma que el servidor ha recibido el número total de apuestas enviadas por el cliente.
+El cliente da inicio a la comunicación mediante el envío de un mensaje específico que señala el comienzo del proceso de transmisión de apuestas. Dicho mensaje se identifica como `INICIO_ENVIO_BETS`.
+
+Una vez recibido dicho mensaje, el servidor responde con una confirmación denominada `ACK_INICIO_ENVIO_BETS`, lo que indica que ha reconocido correctamente el inicio del proceso de transmisión por parte del cliente.
 
 ### Paso 2: Envío de Batches de Apuestas
 
-Una vez que el servidor ha recibido la cantidad de apuestas, se encuentra en disposición de comenzar a recibir los batches (lotes) de apuestas. El cliente comienza a enviar los batches utilizando el siguiente formato:
+Una vez que el servidor ha recibido correctamente el mensaje indicado en el Paso 1, se encuentra en disposición de comenzar a recibir los _batches_ (lotes) de apuestas. El cliente inicia entonces el envío de los _batches_ utilizando el siguiente formato:
 
 `BATCH_BET:AGENCIA|NÚMERO DE APUESTAS ENVIADAS POR BATCH|APUESTAS`
 
-Cada campo de la apuesta se separa por comas, y las apuestas dentro de un batch se separan por punto y coma. A medida que el servidor recibe cada batch, responde con un mensaje de confirmación:
+Cada campo de una apuesta se separa mediante comas, mientras que las distintas apuestas dentro de un mismo _batch_ se separan por punto y coma.
+
+A medida que el servidor va recibiendo cada _batch_, los procesa y almacena adecuadamente mediante la función `store_bets()`. Una vez completado el almacenamiento de un lote, responde al cliente con un mensaje de confirmación:
 
 **Mensaje enviado por el servidor**:  
 `ACK_BATCH_RECEIVED`
 
-### Paso 3: Almacenamiento de Apuestas y Confirmación
+### Paso 3: Finalización del Envío de Apuestas y Confirmación de Recepción
 
-El servidor procesa y almacena cada una de las apuestas enviadas. Una vez que ha almacenado todas las apuestas correspondientes a una agencia, envía un mensaje de confirmación al cliente informando que las apuestas han sido guardadas correctamente:
+Una vez que el cliente ha completado el envío de todas las apuestas correspondientes a su agencia, transmite un mensaje especial al servidor para indicar dicha finalización. Este mensaje se identifica como `END_OF_BETS`.
 
-**Mensaje enviado por el servidor**:  
-`Successfully stored N bets for agency {agency}`
+Al recibirlo, el servidor responde con un mensaje de confirmación, indicando que ha recibido correctamente la notificación de finalización del envío de apuestas para la agencia en cuestión.
 
-### Paso 4: Finalización del Envío de Apuestas
-
-Una vez que el cliente ha enviado todos los batches de apuestas, debe notificar al servidor que ha terminado de enviar las apuestas. Esto se hace mediante el siguiente mensaje:
-
-**Mensaje enviado por el cliente**:  
-`FINISHED SENDING BETS`
-
-### Paso 5: Procesamiento de Resultados
+### Paso 4: Procesamiento de Resultados
 
 En este punto, el servidor está listo para procesar los resultados de la lotería y determinar los ganadores. El servidor envía una lista de los ganadores de la lotería a las agencias, en el siguiente formato:
 
@@ -126,12 +121,11 @@ Cada vez que se acepta una nueva conexión, es decir, cuando un cliente se conec
 
 El uso de múltiples hilos conlleva la existencia de recursos compartidos, los cuales pueden generar resultados inesperados si no se manejan adecuadamente. Para evitar condiciones de carrera (_race conditions_) y garantizar la consistencia de los datos, se implementaron mecanismos de sincronización mediante _locks_. Estos aseguran que determinadas operaciones se realicen de manera atómica, evitando modificaciones simultáneas que puedan comprometer la integridad del sistema.
 
-Dos de los atributos del servidor que fueron protegidos con _locks_ son:
+Uno de los atributos del servidor que fue protegido con _locks_ es:
 
-- **`_completed_agencies`**: Lista que almacena los identificadores de las agencias que han finalizado el proceso de envío de apuestas.
 - **`_agency_sockets`**: Diccionario que asocia cada agencia con su respectivo socket de conexión.
 
-Al utilizar _locks_, se garantiza que estos recursos solo sean modificados por un hilo a la vez, evitando inconsistencias o corrupción de datos.
+Al utilizar _locks_, se garantiza que este recurso solo sea modificado por un hilo a la vez, evitando inconsistencias o corrupción de datos.
 
 ### Sincronización en la Escritura de Archivos
 
@@ -140,3 +134,32 @@ Otro caso relevante en el que se aplicó un mecanismo de sincronización es el m
 Por otro lado, este problema no se presenta en el método `load_bets()`, encargado de leer las apuestas del archivo. Dado que la lectura se realiza en el hilo principal, y únicamente después de que todas las apuestas han sido registradas, no es necesario aplicar un _lock_ en este caso.
 
 El uso de estos mecanismos de sincronización garantiza la correcta ejecución del sistema en un entorno concurrente, asegurando la integridad de los datos y evitando conflictos entre los diferentes hilos.
+
+## Utilización de Threads en Python a pesar del GIL
+
+A pesar de las conocidas limitaciones impuestas por el Global Interpreter Lock (GIL) en Python, la utilización de threads en este programa es viable, ya que la naturaleza del problema no convierte al GIL en un impedimento significativo para su correcto funcionamiento.
+
+### ¿Qué es el GIL?
+
+El GIL es un mecanismo del intérprete de Python (CPython) que impide que múltiples hilos de ejecución (threads) ejecuten bytecode de Python simultáneamente en múltiples núcleos. Esto significa que, incluso en sistemas con múltiples procesadores, los threads en Python no pueden aprovechar completamente el paralelismo a nivel de CPU cuando están ejecutando código Python puro. El GIL fue introducido para simplificar la gestión de memoria interna del intérprete, pero su presencia ha sido objeto de debate debido a las limitaciones que impone en programas intensivos en CPU.
+
+### Por qué los threads funcionan bien en el TP0?
+
+El programa desarrollado se basa en una arquitectura concurrente donde cada cliente es atendido por un hilo separado. Esta estrategia es eficaz debido a que el trabajo principal que realiza cada hilo está centrado en:
+
+- Comunicación mediante sockets (`recv`, `sendall`), que son operaciones de entrada/salida (I/O) bloqueantes.
+- Escritura de datos en archivos o estructuras compartidas protegidas por `Locks`.
+- Procesamiento ligero de datos (parseo de strings, validación básica, construcción de objetos simples).
+
+Las operaciones I/O bloqueantes liberan el GIL temporalmente mientras el hilo espera por datos del cliente o por acceso al sistema de archivos. De esta manera, otros hilos pueden continuar ejecutándose en paralelo. Así, el GIL **no representa un cuello de botella** en este caso, ya que el programa no depende de tareas intensivas en CPU sino de I/O concurrente.
+
+### ¿Cuándo el GIL puede convertirse en un impedimento?
+
+Los hilos en Python tienden a ser ineficientes en aplicaciones donde la carga principal está orientada al procesamiento intensivo en CPU. Por ejemplo:
+
+- Algoritmos de cálculo numérico o simulaciones científicas.
+- Procesamiento de imágenes o video.
+- Algoritmos criptográficos.
+- Procesamiento de grandes volúmenes de datos en memoria.
+
+En estos escenarios, debido a que el GIL impide la ejecución simultánea de threads en diferentes núcleos, el rendimiento no escala correctamente al agregar más hilos. Para este tipo de aplicaciones, se recomienda el uso de modelos basados en procesos (`multiprocessing`).
