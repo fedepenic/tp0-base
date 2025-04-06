@@ -1,7 +1,7 @@
 package common
 
 import (
-	"bufio"
+	"encoding/binary"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -13,25 +13,66 @@ import (
 
 func (c *Client) sendMessage(message string) error {
 	data := []byte(message)
-	totalWritten := 0
+	messageLength := uint32(len(data))
 
-	for totalWritten < len(data) {
-		n, err := c.conn.Write(data[totalWritten:])
-		if err != nil {
-			return fmt.Errorf("error sending message: %w", err)
-		}
-		totalWritten += n
+	var lengthBuf [4]byte
+	binary.BigEndian.PutUint32(lengthBuf[:], messageLength)
+
+	if err := writeAll(c.conn, lengthBuf[:]); err != nil {
+		return fmt.Errorf("error sending message length: %w", err)
+	}
+
+	if err := writeAll(c.conn, data); err != nil {
+		return fmt.Errorf("error sending message data: %w", err)
 	}
 
 	return nil
 }
 
-func readMessage(conn net.Conn) (string, error) {
-	message, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("error reading message: %w", err)
+func writeAll(conn net.Conn, data []byte) error {
+	totalWritten := 0
+	for totalWritten < len(data) {
+		n, err := conn.Write(data[totalWritten:])
+		if err != nil {
+			return err
+		}
+		totalWritten += n
 	}
-	return strings.TrimSpace(message), nil
+	return nil
+}
+
+func readMessage(conn net.Conn) (string, error) {
+	var lengthBuf [4]byte
+	if err := readFull(conn, lengthBuf[:]); err != nil {
+		return "", fmt.Errorf("error reading message length: %w", err)
+	}
+
+	messageLength := binary.BigEndian.Uint32(lengthBuf[:])
+	if messageLength == 0 {
+		return "", nil
+	}
+
+	messageBuf := make([]byte, messageLength)
+	if err := readFull(conn, messageBuf); err != nil {
+		return "", fmt.Errorf("error reading message body: %w", err)
+	}
+
+	return string(messageBuf), nil
+}
+
+func readFull(conn net.Conn, buf []byte) error {
+	totalRead := 0
+	for totalRead < len(buf) {
+		n, err := conn.Read(buf[totalRead:])
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("connection closed unexpectedly")
+		}
+		totalRead += n
+	}
+	return nil
 }
 
 func (c *Client) SendBets(batchMaxAmount int) {
@@ -93,7 +134,7 @@ func (c *Client) sendBetBatches(batchMaxAmount int, agency string) error {
 }
 
 func (c *Client) sendStartOfBetsMessage() error {
-	if err := c.sendMessage("INICIO_ENVIO_BETS\n"); err != nil {
+	if err := c.sendMessage("INICIO_ENVIO_BETS"); err != nil {
 		return fmt.Errorf("error sending start of bets message: %w", err)
 	}
 
@@ -149,7 +190,7 @@ func (c *Client) flushBatch(batch []string, batchMaxAmount int, agency string) e
 }
 
 func (c *Client) sendEndOfBetsMessage() error {
-	if err := c.sendMessage("END_OF_BETS\n"); err != nil {
+	if err := c.sendMessage("END_OF_BETS"); err != nil {
 		return fmt.Errorf("error sending end of bets message: %w", err)
 	}
 	log.Infof("action: end_of_bets_sent | result: success")
@@ -157,7 +198,7 @@ func (c *Client) sendEndOfBetsMessage() error {
 }
 
 func (c *Client) sendBatch(batch []string, batchMaxAmount int, agency string) error {
-	message := fmt.Sprintf("BATCH_BET:%s|%d|%s\n", agency, batchMaxAmount, strings.Join(batch, ";"))
+	message := fmt.Sprintf("BATCH_BET:%s|%d|%s", agency, batchMaxAmount, strings.Join(batch, ";"))
 	if err := c.sendMessage(message); err != nil {
 		return fmt.Errorf("error sending batch: %w", err)
 	}

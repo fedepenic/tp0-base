@@ -1,36 +1,48 @@
 import logging
 import sys
 from common.utils import store_bets, load_bets, has_won, Bet
+import struct
 
 def __send_message(sock, message):
-    sock.sendall(message.encode('utf-8'))
+    encoded_message = message.encode('utf-8')
+    message_length = len(encoded_message)
+    
+    length_header = struct.pack('>I', message_length)
 
-def __receive_message(sock, buffer_size=1024):
-    try:
-        buffer = b''
-        while True:
-            chunk = sock.recv(buffer_size)
-            if not chunk:
-                raise ConnectionError("Socket closed before message was fully received")
-            buffer += chunk
-            if b'\n' in buffer:
-                break
-        delimiter_index = buffer.index(b'\n') + 1
-        message = buffer[:delimiter_index]
-        return message.decode('utf-8')
-    except OSError as e:
-        logging.error(f"Error receiving data: {e}")
-        raise
+    sock.sendall(length_header)
+    sock.sendall(encoded_message)
+
+def __receive_message(sock):
+    length_header = _recv_exact(sock, 4)
+    if not length_header:
+        raise ConnectionError("Failed to receive message length header")
+
+    message_length = struct.unpack('>I', length_header)[0]
+
+    message_bytes = _recv_exact(sock, message_length)
+    if not message_bytes:
+        raise ConnectionError("Failed to receive the full message")
+
+    return message_bytes.decode('utf-8')
+
+def _recv_exact(sock, num_bytes):
+    buffer = b''
+    while len(buffer) < num_bytes:
+        chunk = sock.recv(num_bytes - len(buffer))
+        if not chunk:
+            raise ConnectionError("Socket connection broken during receive")
+        buffer += chunk
+    return buffer
 
 def handle_bets(lock_file_write, client_sock):
     agency = None
     try:
         __await_start_bets_signal(client_sock)
         number_of_bets_received, agency = __receive_all_batches(lock_file_write, client_sock)
-        response = f'Successfully stored {number_of_bets_received} bets for agency {agency}\n'
+        response = f'Successfully stored {number_of_bets_received} bets for agency {agency}'
     except (ValueError, OSError) as e:
         logging.error(f"action: apuesta_recibida | result: fail | cantidad: {number_of_bets_received}")
-        response = f'Error processing batch: {str(e)}\n'
+        response = f'Error processing batch: {str(e)}'
     finally:
         __send_final_response(client_sock, response)
 
@@ -58,7 +70,7 @@ def __receive_all_batches(lock_file_write, client_sock):
     return number_of_bets_received, agency
 
 def __receive_bet_batch(client_sock):
-    bet_data = __receive_message(client_sock, 4096)
+    bet_data = __receive_message(client_sock)
     if not (bet_data.startswith("BATCH_BET:") or bet_data.startswith("END_OF_BETS")):
         raise ValueError("Invalid batch format")
     if bet_data.startswith("END_OF_BETS"):
@@ -86,7 +98,7 @@ def __parse_bet_batch(batch_data):
     return batch_bets, agency
 
 def __acknowledge_client(client_sock, message):
-    __send_message(client_sock, f"{message}\n")
+    __send_message(client_sock, f"{message}")
 
 def __store_received_bets(bets):
     store_bets(bets)
@@ -108,9 +120,9 @@ def process_lottery_results(agency_sockets):
     for agency, documents in winning_documents.items():
         if str(agency) in agency_sockets:
             if not documents:
-                winner_message = 'GANADORES: None\n'
+                winner_message = 'GANADORES: None'
             else:
-                winner_message = f'GANADORES: {" ,".join(documents)}\n'
+                winner_message = f'GANADORES: {" ,".join(documents)}'
             try:
                 __send_message(agency_sockets[str(agency)], winner_message)
                 logging.info(f'action: send_winners | result: success | agency: {agency} | winners: {winner_message.strip()}')
