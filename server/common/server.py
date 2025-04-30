@@ -1,58 +1,73 @@
 import socket
 import logging
+import signal
+import os
+import threading
+from common.protocol_server import shutdown, process_lottery_results, handle_bets
 
 
 class Server:
     def __init__(self, port, listen_backlog):
-        # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._running = True
+        self._total_agencies = int(os.getenv("CANTIDAD_CLIENTES", 0))
+        self._agency_sockets = {}
+        self._threads = []
+
+        self._lock_agency_sockets = threading.Lock()
+        self._lock_file_write = threading.Lock()
+
+        signal.signal(signal.SIGTERM, self.__handle_shutdown)
+        signal.signal(signal.SIGINT, self.__handle_shutdown)
+
+    def __handle_shutdown(self, signum, frame):
+        self._running = False
+        shutdown(self._server_socket, self._agency_sockets, self._lock_agency_sockets)
+
+        for thread in self._threads:
+            thread.join()
 
     def run(self):
-        """
-        Dummy Server loop
+        while self._running:
+            try:
+                client_sock = self.__accept_new_connection()
+                if client_sock:
+                    new_thread = threading.Thread(target=self.__handle_new_client, args=(client_sock,))
+                    new_thread.start()
+                    self._threads.append(new_thread)
+                
+                if len(self._threads) >= self._total_agencies:
+                    for thread in self._threads:
+                        thread.join()
 
-        Server that accept a new connections and establishes a
-        communication with a client. After client with communucation
-        finishes, servers starts to accept new connections again
-        """
+                    process_lottery_results(self._agency_sockets)
+                    self._running = False
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+            except OSError as e:
+                logging.error(f"action: run | result: failure | error: {e} | description: Error handling new connection or processing lottery results")
+                self.__handle_shutdown(None, None)
 
-    def __handle_client_connection(self, client_sock):
-        """
-        Read message from a specific client socket and closes the socket
+        self.__handle_shutdown(None, None)
 
-        If a problem arises in the communication with the client, the
-        client socket will also be closed
-        """
+    def __handle_new_client(self, client_sock):
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
-        except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            agency_id = handle_bets(self._lock_file_write, client_sock)
+            if agency_id:
+                with self._lock_agency_sockets:
+                    self._agency_sockets[agency_id] = client_sock
+                    return
         finally:
-            client_sock.close()
+            if client_sock not in self._agency_sockets.values():
+                client_sock.close()
 
     def __accept_new_connection(self):
-        """
-        Accept new connections
-
-        Function blocks until a connection to a client is made.
-        Then connection created is printed and returned
-        """
-
-        # Connection arrived
-        logging.info('action: accept_connections | result: in_progress')
-        c, addr = self._server_socket.accept()
-        logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
-        return c
+        """Accept new connections, handling shutdown gracefully."""
+        try:
+            logging.info('action: accept_connections | result: in_progress')
+            c, addr = self._server_socket.accept()
+            logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
+            return c
+        except OSError:
+            return None
